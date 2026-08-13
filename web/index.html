@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IO Dock 控制台</title>
+<style>
+:root{
+  --bg:#f4f6fb; --card:#ffffff; --ink:#1e293b; --muted:#64748b; --line:#e6eaf2;
+  --primary:#5b6ee1; --primary-soft:#eef1fd; --mint:#10b981; --mint-soft:#e6f9f1;
+  --peach:#f59e0b; --peach-soft:#fdf3e0; --coral:#ef5b5b; --coral-soft:#fdeeee;
+  --sky:#3aa0ff; --sky-soft:#e9f4ff; --radius:14px; --shadow:0 4px 18px rgba(30,41,59,.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:'Segoe UI','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:
+  radial-gradient(1200px 500px at 10% -10%,#eef1fd 0%,transparent 50%),
+  radial-gradient(1000px 500px at 110% 0%,#e6f9f1 0%,transparent 45%),
+  var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+.wrap{max-width:1100px;margin:0 auto;padding:24px 20px 60px}
+/* ---------- header ---------- */
+header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+.brand{display:flex;align-items:center;gap:14px}
+.logo{width:46px;height:46px;border-radius:14px;background:linear-gradient(135deg,#5b6ee1,#8b7cf6);
+  display:grid;place-items:center;color:#fff;font-size:22px;box-shadow:0 6px 16px rgba(91,110,225,.35)}
+.brand h1{font-size:20px;font-weight:700;letter-spacing:.3px}
+.brand p{color:var(--muted);font-size:12.5px;margin-top:2px}
+.conn{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+select,input[type=number],input[type=text],textarea{font:inherit;color:var(--ink);background:#fff;
+  border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;outline:none;transition:.15s}
+select:focus,input:focus,textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+textarea{resize:vertical;width:100%;font-family:ui-monospace,Consolas,monospace;font-size:13px}
+/* ---------- buttons ---------- */
+.btn{font:inherit;border:none;border-radius:10px;padding:8px 14px;cursor:pointer;font-weight:600;
+  transition:.15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--primary);color:#fff}
+.btn.primary:hover{background:#4a5bd0;box-shadow:0 4px 12px rgba(91,110,225,.3)}
+.btn.mint{background:var(--mint);color:#fff}
+.btn.mint:hover{background:#0ea371}
+.btn.coral{background:var(--coral);color:#fff}
+.btn.coral:hover{background:#e04b4b}
+.btn.peach{background:var(--peach);color:#fff}
+.btn.peach:hover{background:#e08d00}
+.btn.ghost{background:#fff;color:var(--ink);border:1.5px solid var(--line)}
+.btn.ghost:hover{border-color:var(--primary);color:var(--primary)}
+.btn.sky{background:var(--sky);color:#fff}
+.btn.sky:hover{background:#2f8fe0}
+.btn.sm{padding:5px 9px;font-size:12.5px;border-radius:8px}
+/* ---------- status ---------- */
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px}
+.dot.gray{background:#cbd5e1}.dot.green{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18)}
+.status{font-weight:600;color:var(--muted)}
+.status.on{color:var(--mint)}
+/* ---------- tabs ---------- */
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:18px 0}
+.tab{padding:9px 16px;border:none;background:#fff;border-radius:999px;cursor:pointer;font-weight:600;
+  color:var(--muted);font-size:13.5px;border:1.5px solid var(--line);transition:.15s}
+.tab:hover{color:var(--primary);border-color:var(--primary)}
+.tab.active{background:var(--primary);color:#fff;border-color:var(--primary);box-shadow:0 4px 12px rgba(91,110,225,.28)}
+.tab-pane{display:none;animation:fade .25s ease}
+.tab-pane.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+/* ---------- cards & grid ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-top:14px}
+.grid.three{grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;
+  box-shadow:var(--shadow);transition:.2s}
+.card:hover{box-shadow:0 8px 24px rgba(30,41,59,.1)}
+.card h3{font-size:14px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.card h3 .tag{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--primary-soft);
+  color:var(--primary)}
+.card .desc{color:var(--muted);font-size:12px;margin-bottom:12px}
+.section-title{font-size:15px;font-weight:700;margin:22px 0 4px;display:flex;align-items:center;gap:8px}
+.section-title::before{content:"";width:4px;height:16px;border-radius:2px;background:var(--primary)}
+/* ---------- controls ---------- */
+.ctl{display:flex;align-items:center;gap:8px;margin:8px 0;flex-wrap:wrap}
+.ctl label{color:var(--muted);font-size:12.5px;min-width:70px}
+.ctl input[type=number]{width:92px}
+.ctl input[type=text]{flex:1;min-width:120px}
+.ctl select{max-width:200px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:6px;border-radius:3px;
+  background:var(--line);outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+  background:var(--primary);cursor:pointer;box-shadow:0 2px 6px rgba(91,110,225,.4)}
+/* ---------- IO level indicator ---------- */
+.led{display:inline-block;width:14px;height:14px;border-radius:50%;background:#e2e8f0;transition:.15s}
+.led.hi{background:#f97316;box-shadow:0 0 8px rgba(249,115,22,.7)}
+.led.lo{background:#38bdf8;box-shadow:0 0 8px rgba(56,189,248,.7)}
+.io-ind{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:12.5px;color:var(--muted)}
+/* ---------- display / result ---------- */
+.result{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+  font-family:ui-monospace,Consolas,monospace;font-size:13px;min-height:38px;margin-top:10px;
+  word-break:break-all;color:#334155}
+.result.ok{border-color:#a7f3d0;background:#ecfdf5;color:#047857}
+.result.err{border-color:#fecaca;background:#fef2f2;color:#b91c1c}
+.result.info{border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8}
+/* ---------- logs ---------- */
+.log{background:#fbfcfe;border:1px solid var(--line);border-radius:10px;padding:10px;height:220px;
+  overflow-y:auto;font-family:ui-monospace,Consolas,monospace;font-size:12px;margin-top:10px}
+.log div{padding:2px 4px;border-radius:6px}
+.log .tx{color:#4f46e5}
+.log .rx{color:#047857}
+.log .evt{color:#b45309}
+.log .err{color:#b91c1c}
+.log .dim{color:#94a3b8}
+/* ---------- device chips ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{padding:4px 10px;border-radius:999px;background:var(--mint-soft);color:#047857;font-weight:600;
+  font-size:12px;cursor:pointer;border:1px solid #a7f3d0}
+.chip:hover{background:#d1fae5}
+.empty-hint{color:var(--muted);font-size:12.5px;padding:8px 0}
+/* ---------- toast ---------- */
+.toasts{position:fixed;top:18px;right:18px;z-index:999;display:flex;flex-direction:column;gap:8px}
+.toast{background:#fff;border-radius:12px;padding:11px 16px;box-shadow:0 8px 24px rgba(30,41,59,.16);
+  display:flex;align-items:center;gap:10px;animation:slide .25s ease;max-width:320px;border-left:4px solid var(--primary)}
+.toast.success{border-left-color:var(--mint)}
+.toast.error{border-left-color:var(--coral)}
+.toast.info{border-left-color:var(--sky)}
+.toast.hide{opacity:0;transform:translateX(20px);transition:.3s}
+@keyframes slide{from{opacity:0;transform:translateX(20px)}to{opacity:1}}
+/* ---------- chart ---------- */
+.chart-box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:10px}
+canvas{width:100%;height:160px;display:block;border-radius:8px;background:#fbfcfe}
+.chart-legend{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:6px 4px 0}
+/* ---------- misc ---------- */
+.mono{font-family:ui-monospace,Consolas,monospace}
+.badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--sky-soft);color:var(--sky)}
+.led-row{display:flex;gap:6px;align-items:center}
+.slider-val{min-width:44px;text-align:right;font-weight:700;color:var(--primary)}
+.hr{height:1px;background:var(--line);margin:14px 0}
+.note{font-size:12px;color:var(--muted);margin-top:8px}
+</style>
+</head>
+<body>
+<div class="toasts" id="toasts"></div>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="logo">🔌</div>
+      <div>
+        <h1>IO Dock 控制台</h1>
+        <p>IO Dock 扩展板 · 零依赖 Web 工具 · Chrome / Edge</p>
+      </div>
+    </div>
+    <div class="conn">
+      <select id="baud"><option>115200</option><option>921600</option></select>
+      <button class="btn primary" onclick="connect()">🔌 连接</button>
+      <button class="btn ghost" onclick="disconnect()" id="btn-disc" disabled>断开</button>
+      <span class="status" id="status"><span class="dot gray"></span>未连接</span>
+    </div>
+  </header>
+
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-tab="io">📍 IO</button>
+    <button class="tab" data-tab="pwm">🎛️ PWM</button>
+    <button class="tab" data-tab="uart">🔀 UART</button>
+    <button class="tab" data-tab="i2c">🔧 I2C</button>
+    <button class="tab" data-tab="spi">⚡ SPI</button>
+    <button class="tab" data-tab="adc">📊 ADC</button>
+    <button class="tab" data-tab="seq">🎬 SEQ</button>
+    <button class="tab" data-tab="term">💬 终端</button>
+    <button class="tab" data-tab="sys">⚙️ 系统</button>
+  </div>
+
+  <!-- ================= IO ================= -->
+  <section class="tab-pane active" id="tab-io">
+    <div class="section-title">数字 IO(6 路)</div>
+    <div class="grid" id="ioGrid"></div>
+    <div class="card" style="margin-top:14px">
+      <h3>📡 IO 事件(输入变化实时上报)</h3>
+      <div class="log" id="ioEvtLog"><div class="dim">配置某路为输入并开启事件后,电平变化会显示在这里…</div></div>
+    </div>
+  </section>
+
+  <!-- ================= PWM ================= -->
+  <section class="tab-pane" id="tab-pwm">
+    <div class="section-title">PWM 输出(4 路)</div>
+    <div class="grid" id="pwmGrid"></div>
+    <div class="grid" style="grid-template-columns:1fr">
+      <div class="card">
+        <h3>🎯 跨片相位控制</h3>
+        <div class="desc">PWM1 / PWM4 可独立移相;PWM2 与 PWM3 同频同相,仅可反相(等效 180°)。</div>
+        <div class="row">
+          <select id="phaseCh" style="max-width:110px"></select>
+          <span style="color:var(--muted)">相对</span>
+          <select id="phaseRef" style="max-width:110px"></select>
+          <input type="number" id="phaseDeg" value="90" min="0" max="360" style="width:90px">
+          <span style="color:var(--muted)">度</span>
+          <button class="btn mint sm" onclick="doPhase()">设置相位</button>
+          <button class="btn ghost sm" onclick="doSync()">↻ 同步启动</button>
+        </div>
+        <div class="row">
+          <select id="phadjCh" style="max-width:110px"></select>
+          <input type="number" id="phadjTicks" value="1" step="1" style="width:80px">
+          <span style="color:var(--muted)">tick</span>
+          <button class="btn ghost sm" onclick="doPhadj()">微调相位</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PWM 波形示意图 -->
+    <div class="card" style="margin-top:14px">
+      <h3>📈 PWM 波形示意图</h3>
+      <div class="desc">按各通道当前频率/占空比/相位绘制的静态示意图(非实时)。可勾选多个通道叠加显示,时间轴按最慢通道的两个周期对齐。</div>
+      <div class="chips" id="pwmWaveSel"></div>
+      <div class="chart-box" style="margin-top:10px">
+        <canvas id="pwmWave" width="1000" height="240" style="height:240px"></canvas>
+        <div class="chart-legend" id="pwmWaveLegend"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= UART ================= -->
+  <section class="tab-pane" id="tab-uart">
+    <div class="section-title">串口(2 路)</div>
+    <div class="grid three">
+      <div class="card">
+        <h3>⚙️ 配置 <span class="tag">USART1 · UART0</span></h3>
+        <div class="ctl"><label>波特率</label><input type="number" id="u1baud" value="115200" min="1200" max="7800000"></div>
+        <div class="ctl"><label>数据位</label>
+          <select id="u1db"><option>8</option><option>7</option><option>6</option><option>5</option></select></div>
+        <div class="ctl"><label>校验</label>
+          <select id="u1par"><option value="N">无</option><option value="O">奇</option><option value="E">偶</option></select></div>
+        <div class="ctl"><label>停止位</label>
+          <select id="u1sb"><option>1</option><option>2</option></select></div>
+        <button class="btn primary sm" onclick="uartCfg(1)">应用配置</button>
+        <div class="row">
+          <button class="btn mint sm" onclick="uartStream(1,1)">开启透传</button>
+          <button class="btn ghost sm" onclick="uartStream(1,0)">关闭透传</button>
+          <button class="btn ghost sm" onclick="uartStat(1)">状态</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>📤 发送</h3>
+        <textarea id="u1tx" rows="3" placeholder="要发送的文本…"></textarea>
+        <div class="row">
+          <button class="btn mint sm" onclick="uartTx(1,'txt')">发送文本</button>
+          <button class="btn ghost sm" onclick="uartTx(1,'hex')">发送 HEX</button>
+        </div>
+        <div class="hr"></div>
+        <h3>📥 接收</h3>
+        <div class="row">
+          <button class="btn sky sm" onclick="uartRx(1)">读取缓冲</button>
+          <button class="btn ghost sm" onclick="uartFlush(1)">清空</button>
+        </div>
+        <div class="result" id="u1rx">-</div>
+      </div>
+      <div class="card" style="grid-row:span 2">
+        <h3>💬 USART1 日志</h3>
+        <div class="log" id="u1log" style="height:340px"><div class="dim">收发与事件记录…</div></div>
+      </div>
+      <div class="card">
+        <h3>⚙️ 配置 <span class="tag">USART2 · UART1</span></h3>
+        <div class="ctl"><label>波特率</label><input type="number" id="u2baud" value="115200" min="1200" max="7800000"></div>
+        <div class="ctl"><label>数据位</label>
+          <select id="u2db"><option>8</option><option>7</option><option>6</option><option>5</option></select></div>
+        <div class="ctl"><label>校验</label>
+          <select id="u2par"><option value="N">无</option><option value="O">奇</option><option value="E">偶</option></select></div>
+        <div class="ctl"><label>停止位</label>
+          <select id="u2sb"><option>1</option><option>2</option></select></div>
+        <button class="btn primary sm" onclick="uartCfg(2)">应用配置</button>
+        <div class="row">
+          <button class="btn mint sm" onclick="uartStream(2,1)">开启透传</button>
+          <button class="btn ghost sm" onclick="uartStream(2,0)">关闭透传</button>
+          <button class="btn ghost sm" onclick="uartStat(2)">状态</button>
+        </div>
+        <div class="hr"></div>
+        <textarea id="u2tx" rows="2" placeholder="发送文本…"></textarea>
+        <div class="row">
+          <button class="btn mint sm" onclick="uartTx(2,'txt')">发送文本</button>
+          <button class="btn ghost sm" onclick="uartTx(2,'hex')">发送 HEX</button>
+        </div>
+        <div class="row">
+          <button class="btn sky sm" onclick="uartRx(2)">读取缓冲</button>
+          <button class="btn ghost sm" onclick="uartFlush(2)">清空</button>
+        </div>
+        <div class="result" id="u2rx">-</div>
+      </div>
+      <div class="card">
+        <h3>💬 USART2 日志</h3>
+        <div class="log" id="u2log" style="height:200px"><div class="dim">收发与事件记录…</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= I2C ================= -->
+  <section class="tab-pane" id="tab-i2c">
+    <div class="section-title">I2C 总线(1 路 · 100k/400k/1M)</div>
+    <div class="grid three">
+      <div class="card">
+        <h3>⚙️ 配置与扫描</h3>
+        <div class="ctl"><label>速率</label>
+          <select id="i2cRate"><option value="100">100 kHz</option><option value="400" selected>400 kHz</option>
+          <option value="1000">1000 kHz</option></select>
+          <button class="btn ghost sm" onclick="i2cApply()">应用</button></div>
+        <button class="btn primary sm" style="width:100%;margin-top:8px" onclick="i2cScan()">🔍 扫描总线</button>
+        <div class="chips" id="i2cDevices"><div class="empty-hint">点击扫描查看设备</div></div>
+      </div>
+      <div class="card">
+        <h3>📖 读</h3>
+        <div class="ctl"><label>地址 7bit(HEX)</label><input type="text" id="i2cAddr" value="3C" style="width:70px"></div>
+        <div class="ctl"><label>寄存器(HEX)</label><input type="text" id="i2cReg" value="00" style="width:70px"></div>
+        <div class="ctl"><label>长度</label><input type="number" id="i2cLen" value="4" min="1" max="255" style="width:80px"></div>
+        <div class="row">
+          <button class="btn sky sm" onclick="i2cRead()">读寄存器</button>
+          <button class="btn ghost sm" onclick="i2cReadOnly()">直读</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>✍️ 写</h3>
+        <div class="ctl"><label>地址 7bit(HEX)</label><input type="text" id="i2cWAddr" value="3C" style="width:70px"></div>
+        <div class="ctl"><label>寄存器(HEX)</label><input type="text" id="i2cWReg" value="00" style="width:70px"></div>
+        <div class="ctl"><label>数据(HEX)</label><input type="text" id="i2cWData" placeholder="AA BB …"></div>
+        <div class="row">
+          <button class="btn mint sm" onclick="i2cWrite()">写寄存器</button>
+          <button class="btn ghost sm" onclick="i2cWOnly()">直写</button>
+        </div>
+      </div>
+      <div class="card" style="grid-column:1/-1">
+        <h3>📋 日志</h3>
+        <div class="log" id="i2cLog"><div class="dim">操作记录…</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SPI ================= -->
+  <section class="tab-pane" id="tab-spi">
+    <div class="section-title">SPI 总线(1 路 · 最高约 66MHz)</div>
+    <div class="grid three">
+      <div class="card">
+        <h3>⚙️ 配置</h3>
+        <div class="ctl"><label>模式</label>
+          <select id="spiMode"><option value="0">模式 0</option><option value="1">模式 1</option>
+          <option value="2">模式 2</option><option value="3">模式 3</option></select></div>
+        <div class="ctl"><label>速率</label>
+          <select id="spiSpeed"><option value="125000">125 kHz</option><option value="1000000" selected>1 MHz</option>
+          <option value="4000000">4 MHz</option><option value="16000000">16 MHz</option></select></div>
+        <div class="ctl"><label>位序</label>
+          <select id="spiOrder"><option value="MSB">MSB</option><option value="LSB">LSB</option></select></div>
+        <div class="ctl"><label>位宽</label><input type="number" id="spiBits" value="8" min="4" max="16" style="width:80px"></div>
+        <button class="btn primary sm" style="width:100%" onclick="spiApply()">应用配置</button>
+        <div class="ctl" style="margin-top:10px"><label>CS</label>
+          <button class="btn ghost sm" onclick="spiCs(0)">自动</button>
+          <button class="btn ghost sm" onclick="spiCs(1)">拉低</button>
+          <button class="btn ghost sm" onclick="spiCs(2)">拉高</button></div>
+      </div>
+      <div class="card">
+        <h3>📡 全双工传输</h3>
+        <div class="ctl"><label>发送(HEX)</label><input type="text" id="spiTx" value="9F 00 00 00" placeholder="9F 00 00 00"></div>
+        <button class="btn mint sm" style="width:100%" onclick="spiXfr()">开始传输</button>
+        <div class="result" id="spiRx">-</div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn ghost sm" onclick="spiWrite()">只写</button>
+          <button class="btn sky sm" onclick="spiRead()">只读</button>
+        </div>
+      </div>
+      <div class="card" style="grid-row:span 2">
+        <h3>📋 日志</h3>
+        <div class="log" id="spiLog" style="height:340px"><div class="dim">操作记录…</div></div>
+      </div>
+      <div class="card">
+        <h3>🧩 常用命令模板</h3>
+        <div class="chips">
+          <span class="chip" onclick="spiTemplate('9F 00 00 00')">Flash JEDEC ID</span>
+          <span class="chip" onclick="spiTemplate('05 00')">Flash 状态</span>
+          <span class="chip" onclick="spiTemplate('03 00 00 00 00 00 00 00')">Flash 读</span>
+          <span class="chip" onclick="spiTemplate('DE AD BE EF')">0xDEADBEEF</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= ADC ================= -->
+  <section class="tab-pane" id="tab-adc">
+    <div class="section-title">ADC(3 路 + 温度 · 12bit · 最高 500kSPS)</div>
+    <div class="grid three">
+      <div class="card">
+        <h3>📊 通道读取</h3>
+        <div id="adcChannels"></div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn primary sm" onclick="adcReadAll()">读取全部</button>
+          <button class="btn sky sm" onclick="adcTemp()">温度</button>
+        </div>
+        <div class="result" id="adcAllResult">-</div>
+      </div>
+      <div class="card" style="grid-column:span 2">
+        <h3>📈 连续采样 <span class="badge" id="adcStreamState">未启动</span></h3>
+        <div class="ctl">
+          <label>通道</label>
+          <select id="adcStreamCh"><option value="0">ADC0</option><option value="1">ADC1</option><option value="2">ADC2</option></select>
+          <label>速率</label><input type="number" id="adcStreamRate" value="200" min="1" max="500000" style="width:90px">
+          <span style="color:var(--muted)">Hz</span>
+          <label>时长</label><input type="number" id="adcStreamMs" value="3000" min="100" max="1000000" style="width:90px">
+          <span style="color:var(--muted)">ms</span>
+          <button class="btn mint sm" onclick="adcStreamStart()">开始</button>
+          <button class="btn coral sm" onclick="adcStreamStop()">停止</button>
+        </div>
+        <div class="chart-box">
+          <canvas id="adcChart" width="800" height="160"></canvas>
+          <div class="chart-legend"><span id="adcChartInfo">等待采样…</span><span>mV</span></div>
+        </div>
+      </div>
+      <div class="card" style="grid-column:1/-1">
+        <h3>🔔 阈值事件</h3>
+        <div class="ctl">
+          <label>通道</label><select id="threshCh"><option value="0">ADC0</option><option value="1">ADC1</option><option value="2">ADC2</option></select>
+          <label>低(mV)</label><input type="number" id="threshLo" value="500" style="width:80px">
+          <label>高(mV)</label><input type="number" id="threshHi" value="2500" style="width:80px">
+          <button class="btn mint sm" onclick="adcThresh(1)">启用</button>
+          <button class="btn ghost sm" onclick="adcThresh(0)">关闭</button>
+        </div>
+        <div class="log" id="threshLog" style="height:100px"><div class="dim">阈值越界事件…</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SEQ ================= -->
+  <section class="tab-pane" id="tab-seq">
+    <div class="section-title">组合时序动作(序列脚本)</div>
+    <div class="grid three">
+      <div class="card">
+        <h3>📝 定义序列</h3>
+        <div class="ctl"><label>名称</label><input type="text" id="seqName" value="demo"></div>
+        <label style="font-size:12.5px;color:var(--muted)">脚本(分号分隔,支持 @ms / +ms)</label>
+        <textarea id="seqScript" rows="6">IO IO1 LOW@0; WAIT 200; IO IO1 HIGH@200; WAIT 200</textarea>
+        <button class="btn primary sm" style="width:100%" onclick="seqDef()">定义</button>
+      </div>
+      <div class="card">
+        <h3>▶️ 运行</h3>
+        <div class="ctl"><label>名称</label><input type="text" id="seqRunName" value="demo"></div>
+        <div class="ctl"><label>次数(0=无限)</label><input type="number" id="seqRepeat" value="2" min="0" max="65535" style="width:80px"></div>
+        <div class="row">
+          <button class="btn mint sm" onclick="seqRun()">运行</button>
+          <button class="btn coral sm" onclick="seqStop()">停止</button>
+          <button class="btn ghost sm" onclick="seqStat()">状态</button>
+        </div>
+        <div class="result" id="seqStatResult">-</div>
+      </div>
+      <div class="card">
+        <h3>🗂️ 管理</h3>
+        <div class="row">
+          <button class="btn ghost sm" onclick="seqList()">列出</button>
+          <button class="btn ghost sm" onclick="seqShow()">显示脚本</button>
+          <button class="btn ghost sm" onclick="seqDel()">删除</button>
+        </div>
+        <div class="result" id="seqListResult">-</div>
+        <div class="hr"></div>
+        <h3>🎬 完成事件</h3>
+        <div class="log" id="seqDoneLog" style="height:100px"><div class="dim">SEQ_DONE 事件…</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= Terminal ================= -->
+  <section class="tab-pane" id="tab-term">
+    <div class="section-title">时间同步与调试终端</div>
+    <div class="card" style="margin-bottom:14px">
+      <h3>⏱️ 时间同步(主机 → 从机)</h3>
+      <div class="desc">主机定时把自身时间发给从机,从机按通信延迟计算偏移并插值,使从机时间与主机对齐。单向发送,不受串口接收抖动影响。</div>
+      <div class="ctl">
+        <label>周期</label>
+        <select id="syncInterval" style="max-width:120px">
+          <option value="1000">1 秒</option>
+          <option value="500">0.5 秒</option>
+          <option value="200">0.2 秒</option>
+        </select>
+        <button class="btn mint sm" id="syncBtn" onclick="syncStart()">▶ 开始同步</button>
+        <button class="btn ghost sm" onclick="syncStop()">⏹ 停止</button>
+      </div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(170px,1fr));margin-top:12px">
+        <div class="card" style="box-shadow:none">
+          <div class="data-display">
+            <div class="data-value" id="syncOffset">-</div>
+            <div class="data-label">时钟偏移(从机-主机)</div>
+          </div>
+        </div>
+        <div class="card" style="box-shadow:none">
+          <div class="data-display">
+            <div class="data-value" id="syncDrift">-</div>
+            <div class="data-label">漂移(从机晶振误差/秒)</div>
+          </div>
+        </div>
+        <div class="card" style="box-shadow:none">
+          <div class="data-display">
+            <div class="data-value" id="syncCount">0</div>
+            <div class="data-label">同步次数</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="section-title">调试终端(任意命令)</div>
+    <div class="card">
+      <div class="ctl">
+        <input type="text" id="termInput" placeholder="输入命令,如 PING / INFO / PWM READ PWM1…" style="flex:1">
+        <button class="btn primary sm" onclick="termSend()">发送</button>
+        <button class="btn ghost sm" onclick="termClear()">清空</button>
+      </div>
+      <div class="log" id="termLog" style="height:360px"><div class="dim">输入命令试试…</div></div>
+    </div>
+  </section>
+
+  <!-- ================= System ================= -->
+  <section class="tab-pane" id="tab-sys">
+    <div class="section-title">系统与固件烧录</div>
+    <div class="grid three">
+      <div class="card">
+        <h3>ℹ️ 设备信息</h3>
+        <div class="row">
+          <button class="btn primary sm" onclick="sysPing()">PING</button>
+        </div>
+        <div class="result" id="sysResult">-</div>
+      </div>
+      <div class="card">
+        <h3>♻️ 系统控制</h3>
+        <div class="desc">软复位会重启板卡,串口断开,需重新连接。</div>
+        <button class="btn ghost sm" style="width:100%" onclick="sysReset()">软复位</button>
+      </div>
+      <div class="card">
+        <h3>🔥 烧录固件</h3>
+        <div class="desc">① 点击「进入烧写模式」,板卡断开串口并枚举为一个 U 盘;</div>
+        <div class="desc">② 把固件文件 <b>io_dock-v0.1.uf2</b> 拖入该 U 盘,板卡自动重启完成烧录。</div>
+        <button class="btn coral sm" style="width:100%;margin-top:8px" onclick="sysBootloader()">进入烧写模式</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+"use strict";
+/* ==================== 工具 ==================== */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const now = () => new Date().toLocaleTimeString('zh-CN',{hour12:false});
+function toast(msg, type='info'){
+  const t=document.createElement('div'); t.className='toast '+type;
+  const ic={success:'✅',error:'❌',info:'ℹ️'}[type]||'ℹ️';
+  t.innerHTML=`<span>${ic}</span><span>${esc(msg)}</span>`;
+  $('toasts').appendChild(t);
+  setTimeout(()=>{t.classList.add('hide');setTimeout(()=>t.remove(),350);},2800);
+}
+function requireConn(){ if(!conn) {toast('请先连接板卡','error'); return false;} return true; }
+if(!('serial' in navigator)){
+  toast('当前环境不支持 Web Serial。请用 Chrome/Edge,并通过 http://localhost 或 HTTPS 打开本页(直接打开 file:// 可能被拒绝)','error');
+}
+window.addEventListener('unhandledrejection', e => {
+  toast('操作失败: ' + (e.reason && e.reason.message || e.reason), 'error');
+  e.preventDefault();
+});
+
+/* ==================== 串口与协议 ==================== */
+let port=null, reader=null, writer=null, conn=false, rxBuf='';
+let pending=null; // {key,multiline,lines,resolve,reject,timer}
+
+async function connect(){
+  try{
+    if(!('serial' in navigator)){toast('浏览器不支持 Web Serial,请用 Chrome/Edge','error');return;}
+    port = await navigator.serial.requestPort();
+    await port.open({baudRate: parseInt($('baud').value) });
+    conn=true; writer=port.writable.getWriter(); reader=port.readable.getReader();
+    $('status').innerHTML='<span class="dot green"></span>已连接';
+    $('btn-disc').disabled=false; toast('连接成功','success');
+    readLoop(); ping(); info();
+  }catch(e){ toast('连接失败: '+e.message,'error'); }
+}
+async function disconnect(){
+  conn=false;
+  try{ if(pending){clearTimeout(pending.timer);pending.reject(new Error('已断开'));pending=null;} }
+  catch(e){}
+  try{ if(reader){await reader.cancel();reader.releaseLock();} if(writer)writer.releaseLock(); if(port)await port.close(); }catch(e){}
+  reader=null;writer=null;port=null;
+  $('status').innerHTML='<span class="dot gray"></span>未连接'; $('btn-disc').disabled=true;
+  toast('已断开','info');
+}
+async function readLoop(){
+  const dec=new TextDecoder();
+  try{
+    while(conn&&reader){
+      const {value,done}=await reader.read();
+      if(done)break;
+      rxBuf+=dec.decode(value,{stream:true});
+      let i;
+      while((i=rxBuf.indexOf('\n'))>=0){
+        const line=rxBuf.slice(0,i).replace(/\r$/,''); rxBuf=rxBuf.slice(i+1);
+        if(line.trim()) handleLine(line.trim());
+      }
+    }
+  }catch(e){/* port closed */}
+}
+function sendRaw(s){
+  if(!requireConn())return false;
+  writer.write(new TextEncoder().encode(s+'\n')).catch(e=>toast('发送失败','error'));
+  return true;
+}
+function sendCommand(line,{multiline=false,timeout=3500}={}){
+  return new Promise((resolve,reject)=>{
+    const key=line.split(' ')[0];
+    if(pending){pending.reject(new Error('上一命令未完成'));}
+    pending={key,multiline,lines:[],resolve,reject,
+      timer:setTimeout(()=>{pending=null;reject(new Error('响应超时: '+line));},timeout)};
+    writer.write(new TextEncoder().encode(line+'\n')).catch(e=>{pending=null;reject(e);});
+  });
+}
+function finishPending(lines){
+  clearTimeout(pending.timer); const p=pending; pending=null; p.resolve(lines);
+}
+function handleLine(line){
+  // 异步事件与数据流
+  if(line.startsWith('EVT ')) return handleEvent(line);
+  if(line.startsWith('DATA ')) return handleData(line);
+  if(line.startsWith('DATA_END')) return handleDataEnd(line);
+  termLine('rx',line);
+  if(pending){
+    pending.lines.push(line);
+    if(line.startsWith('OK ')||line.startsWith('ERR ')){
+      const tok=line.split(' ')[1];
+      if(tok===pending.key){
+        if(!pending.multiline) return finishPending(pending.lines);
+        return; // multiline: 等 END
+      }
+      // 不匹配 -> 当作无关输出
+      pending.lines.pop();
+      return;
+    }
+    if(pending.multiline && line==='END') return finishPending(pending.lines);
+  }
+}
+function termLine(kind,text){
+  const log=$('termLog');
+  log.innerHTML+=`<div class="${kind}"><span class="dim">[${now()}]</span> ${esc(text)}</div>`;
+  log.scrollTop=log.scrollHeight;
+}
+function addLog(id,text,kind='info'){
+  const log=$(id); if(!log)return;
+  log.innerHTML+=`<div class="${kind}"><span class="dim">[${now()}]</span> ${esc(text)}</div>`;
+  log.scrollTop=log.scrollHeight;
+}
+function showResult(id,text,kind='info'){
+  const el=$(id); if(!el)return;
+  el.textContent=text; el.className='result '+kind;
+}
+function errCode(line){ const m=line.match(/ERR\s+\S+\s+(\S+)/); return m?m[1]:''; }
+
+/* ==================== 事件 / 数据流 ==================== */
+function handleEvent(line){
+  const p=line.split(' ');
+  termLine('evt',line);
+  if(p[1]==='GPIO'){ // EVT GPIO IOx HIGH|LOW
+    const ch=parseInt(p[2].slice(2))-1, level=p[3];
+    const dot=document.querySelector(`.led[data-io="${ch}"]`);
+    if(dot){dot.className='led '+(level==='HIGH'?'hi':'lo');}
+    const el=$('ioEvtLog');
+    el.insertAdjacentHTML('afterbegin',`<div class="evt"><span class="dim">[${now()}]</span> IO${ch+1} → ${level}</div>`);
+    while(el.children.length>50)el.lastChild.remove();
+  }
+  else if(p[1]==='UART_RX'){ // EVT UART_RX USARTx HEX:..
+    const u=p[2].slice(5), hex=(p[3]||'').slice(4);
+    addLog('u'+u+'log','收到: '+hexToAscii(hex),'evt');
+    $( 'u'+u+'rx').textContent=hex||'-';
+  }
+  else if(p[1]==='UART_OVERRUN'){ addLog('u'+p[2].slice(5)+'log','溢出,丢弃 '+p[3]+' 字节','err'); }
+  else if(p[1]==='ADC_THRESH'){ // EVT ADC_THRESH ADCx ABOVE|BELOW mv
+    addLog('threshLog',`ADC${p[2].slice(3)} ${p[3]} ${p[4]}mV`,'evt');
+  }
+  else if(p[1]==='SEQ_DONE'){ addLog('seqDoneLog','序列完成: '+p[2],'evt'); }
+}
+function handleData(line){ // DATA ADCx csv
+  const p=line.split(' '); const vals=(p[2]||'').split(',');
+  if(p[1].startsWith('ADC')) pushSamples(vals);
+  termLine('rx',line);
+}
+function handleDataEnd(line){ termLine('rx',line); }
+function hexToAscii(hex){
+  let s=''; for(let i=0;i+1<hex.length;i+=2){const c=parseInt(hex.slice(i,i+2),16);s+=c>=32&&c<127?String.fromCharCode(c):'.';}
+  return s||'(空)';
+}
+
+/* ==================== 连接后的握手 ==================== */
+async function ping(){ try{ const r=await sendCommand('PING'); showResult('adcAllResult',r[0],'ok'); }catch(e){} }
+async function info(){
+  try{ const r=await sendCommand('INFO',{multiline:true}); toast('板卡已连接,固件 '+(r[0]||'')+'','success'); }catch(e){}
+}
+
+/* ==================== 标签页 ==================== */
+$('tabs').addEventListener('click',e=>{
+  const b=e.target.closest('.tab'); if(!b)return;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t===b));
+  document.querySelectorAll('.tab-pane').forEach(p=>p.classList.toggle('active',p.id==='tab-'+b.dataset.tab));
+});
+
+/* ==================== 初始化渲染 ==================== */
+function renderIO(){
+  const g=$('ioGrid'); g.innerHTML='';
+  for(let i=0;i<6;i++){
+    const card=document.createElement('div'); card.className='card';
+    card.innerHTML=`
+      <h3>💡 IO${i+1}</h3>
+      <div class="ctl">
+        <label>模式</label>
+        <select data-io="${i}" class="io-mode">
+          <option value="OUT">输出</option><option value="IN">输入</option>
+        </select>
+        <select data-io="${i}" class="io-pull" style="display:none">
+          <option value="0">浮空</option><option value="1">上拉</option><option value="2">下拉</option>
+        </select>
+        <button class="btn ghost sm" data-io="${i}" onclick="ioApply(${i})">应用</button>
+      </div>
+      <div class="row">
+        <button class="btn mint sm" onclick="ioWrite(${i},1)">HIGH</button>
+        <button class="btn coral sm" onclick="ioWrite(${i},0)">LOW</button>
+        <button class="btn ghost sm" onclick="ioToggle(${i})">翻转</button>
+        <button class="btn sky sm" onclick="ioRead(${i})">读取</button>
+        <span class="io-ind" data-io="${i}"><span class="led" data-io="${i}"></span><span data-io="${i}" class="io-txt">?</span></span>
+      </div>
+      <div class="ctl">
+        <label>脉冲</label>
+        <input type="number" data-io="${i}" class="io-pulse-ms" value="200" min="1" style="width:70px">
+        <span style="color:var(--muted)">ms</span>
+        <button class="btn peach sm" onclick="ioPulse(${i})">脉冲 LOW</button>
+      </div>
+      <div class="ctl">
+        <label>事件</label>
+        <select data-io="${i}" class="io-evt">
+          <option value="0">关闭</option><option value="1">上升沿</option><option value="2">下降沿</option><option value="3">边沿</option>
+        </select>
+        <button class="btn ghost sm" onclick="ioEvent(${i})">应用</button>
+      </div>`;
+    g.appendChild(card);
+  }
+  g.querySelectorAll('.io-mode').forEach(sel=>{
+    sel.addEventListener('change',()=>{
+      const pull=sel.parentElement.querySelector('.io-pull');
+      pull.style.display = sel.value==='IN' ? '' : 'none';
+    });
+  });
+}
+function renderPWM(){
+  const names=['PWM1','PWM2','PWM3','PWM4'];
+  const g=$('pwmGrid'); g.innerHTML='';
+  for(let i=0;i<4;i++){
+    const card=document.createElement('div'); card.className='card';
+    card.innerHTML=`
+      <h3>🎛️ ${names[i]}</h3>
+      <div class="ctl"><label>频率</label><input type="number" data-p="${i}" class="p-freq" value="1000" min="1"><span style="color:var(--muted)">Hz</span></div>
+      <div class="ctl"><label>占空比</label>
+        <input type="range" data-p="${i}" class="p-duty" min="0" max="100" value="50">
+        <span class="slider-val" data-p="${i}">50%</span></div>
+      <div class="row">
+        <button class="btn mint sm" onclick="pwmApply(${i})">应用</button>
+        <button class="btn sky sm" onclick="pwmStart(${i})">启动</button>
+        <button class="btn coral sm" onclick="pwmStop(${i})">停止</button>
+        <button class="btn ghost sm" onclick="pwmRead(${i})">读取</button>
+      </div>
+      <div class="hr"></div>
+      <div class="ctl"><label>极性</label>
+        <button class="btn ghost sm" onclick="pwmPol(${i},1)">反转</button>
+        <button class="btn ghost sm" onclick="pwmPol(${i},0)">正常</button>
+      </div>
+      <div class="ctl"><label>渐变</label>
+        <input type="number" data-p="${i}" class="p-sw-from" value="0" min="0" max="100" style="width:60px">
+        <span style="color:var(--muted)">→</span>
+        <input type="number" data-p="${i}" class="p-sw-to" value="100" min="0" max="100" style="width:60px">
+        <input type="number" data-p="${i}" class="p-sw-step" value="10" min="1" style="width:60px">
+        <button class="btn peach sm" onclick="pwmSweep(${i})">渐变</button>
+      </div>`;
+    g.appendChild(card);
+    const duty=card.querySelector('.p-duty');
+    duty.addEventListener('input',()=>{
+      card.querySelector('.slider-val').textContent=duty.value+'%';
+      drawPwmWave();
+    });
+    card.querySelector('.p-freq').addEventListener('input', drawPwmWave);
+  }
+  // 相位选择
+  const ch=$('phaseCh'),ref=$('phaseRef'),pa=$('phadjCh');
+  ch.innerHTML=ref.innerHTML=pa.innerHTML=names.map((n,i)=>`<option value="${i}">${n}</option>`).join('');
+  renderWaveSelector();
+  drawPwmWave();
+}
+
+/* ---- PWM 波形示意图(静态) ---- */
+const pwmColors=['#5b6ee1','#10b981','#f59e0b','#3aa0ff'];
+let pwmPhaseDeg=[0,0,0,0];   // 相位(度),由 PHASE/PHADJ/SYNC 维护
+let pwmInverted=[false,false,false,false]; // 极性反转,由 PWM POL 维护
+let waveSel=new Set([0,1,2,3]);
+
+function renderWaveSelector(){
+  const box=$('pwmWaveSel'); box.innerHTML='';
+  for(let i=0;i<4;i++){
+    const chip=document.createElement('span');
+    chip.className='chip'+(waveSel.has(i)?'':' chip-off');
+    chip.style.cssText='display:inline-flex;align-items:center;gap:6px;'+(waveSel.has(i)?'':'opacity:.4');
+    chip.innerHTML=`<span style="color:${pwmColors[i]};font-size:14px">■</span>PWM${i+1}`;
+    chip.onclick=()=>{ waveSel.has(i)?waveSel.delete(i):waveSel.add(i); renderWaveSelector(); drawPwmWave(); };
+    box.appendChild(chip);
+  }
+}
+function pwmFreq(i){ return parseFloat($('pwmGrid').querySelector(`.p-freq[data-p="${i}"]`).value)||1; }
+function pwmDuty(i){ return parseFloat($('pwmGrid').querySelector(`.p-duty[data-p="${i}"]`).value)||0; }
+
+function drawPwmWave(){
+  const c=$('pwmWave'), ctx=c.getContext('2d'), W=c.width, H=c.height;
+  ctx.clearRect(0,0,W,H);
+  const sel=[...waveSel];
+  if(!sel.length){
+    ctx.fillStyle='#94a3b8'; ctx.font='13px sans-serif';
+    ctx.fillText('勾选上方通道以显示波形', W/2-80, H/2); return;
+  }
+  // 时间轴:以所选通道中最长的周期(最慢频率)为基准,显示约 3 个周期
+  let maxP=0;
+  sel.forEach(i=>{ maxP=Math.max(maxP,1000/pwmFreq(i)); });
+  const totalT=maxP*3, tpp=totalT/W, perPx=maxP/tpp;
+  const padL=64, padT=14, padB=14;
+  const bandH=(H-padT-padB)/sel.length;
+  // 网格(每个慢周期一根竖线)
+  ctx.strokeStyle='#eef1f6'; ctx.lineWidth=1;
+  for(let x=padL+perPx; x<W; x+=perPx){ ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,H-padB); ctx.stroke(); }
+  sel.forEach((i,idx)=>{
+    const f=pwmFreq(i), duty=pwmDuty(i), phase=(pwmPhaseDeg[i]||0), period=1000/f;
+    const yTop=padT+idx*bandH, mid=yTop+bandH/2, amp=bandH*0.34;
+    // 基线
+    ctx.strokeStyle='#e2e8f0'; ctx.setLineDash([3,3]); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(padL,mid); ctx.lineTo(W,mid); ctx.stroke(); ctx.setLineDash([]);
+    // 方波(极性反转时高低取反)
+    ctx.strokeStyle=pwmColors[i%4]; ctx.lineWidth=2.5; ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.beginPath();
+    let lastY=null;
+    for(let x=padL; x<=W; x++){
+      const t=(x-padL)*tpp;
+      let pos=((t/period) - phase/360) % 1; if(pos<0) pos+=1;
+      let high = pos < duty/100;
+      if(pwmInverted[i]) high = !high;
+      const y=mid - (high ? amp : -amp);
+      if(lastY===null) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      lastY=y;
+    }
+    ctx.stroke();
+    // 标签
+    ctx.fillStyle='#334155'; ctx.font='600 11px sans-serif'; ctx.textAlign='right';
+    ctx.fillText(`PWM${i+1}`, padL-8, mid+4);
+    ctx.textAlign='left';
+  });
+  $('pwmWaveLegend').innerHTML=sel.map(i=>`<span style="color:${pwmColors[i%4]}">■ PWM${i+1} · ${pwmFreq(i)}Hz · ${pwmDuty(i)}%`+(pwmInverted[i]?' · 反转':'')+(pwmPhaseDeg[i]?` · 相位${pwmPhaseDeg[i]}°`:'')+'</span>').join('　　');
+}
+function renderADC(){
+  const box=$('adcChannels'); box.innerHTML='';
+  for(let i=0;i<3;i++){
+    const d=document.createElement('div'); d.className='ctl';
+    d.innerHTML=`
+      <label>ADC${i}</label>
+      <button class="btn sky sm" onclick="adcRead(${i})">读取</button>
+      <span class="mono" style="flex:1;color:var(--muted)" id="adcVal${i}">—</span>
+      <span class="mono" style="color:var(--primary)" id="adcMv${i}"></span>`;
+    box.appendChild(d);
+  }
+}
+renderIO(); renderPWM(); renderADC();
+
+/* ==================== IO ==================== */
+function ioDir(i){ return document.querySelector(`.io-mode[data-io="${i}"]`).value; }
+async function ioApply(i){
+  if(!requireConn())return;
+  const dir=ioDir(i), pull=document.querySelector(`.io-pull[data-io="${i}"]`).value;
+  let cmd=`IO CFG IO${i+1} ${dir}`;
+  if(dir==='IN'&&pull!=='0')cmd+=' '+(pull==='1'?'PULLUP':'PULLDOWN');
+  const r=await sendCommand(cmd);
+  if(r[0].startsWith('OK')){toast(`IO${i+1} 配置为${dir==='OUT'?'输出':'输入'}`,'success');}
+  else toast('配置失败: '+errCode(r[0]),'error');
+}
+async function ioWrite(i,v){
+  const r=await sendCommand(`IO WRITE IO${i+1} ${v?'HIGH':'LOW'}`);
+  const dot=document.querySelector(`.led[data-io="${i}"]`);
+  if(r[0].startsWith('OK')){dot.className='led '+(v?'hi':'lo');document.querySelector(`.io-txt[data-io="${i}"]`).textContent=v?'HIGH':'LOW';}
+  else toast('写失败: '+errCode(r[0]),'error');
+}
+async function ioRead(i){
+  const r=await sendCommand(`IO READ IO${i+1}`);
+  if(r[0].startsWith('OK')){
+    const lv=r[0].split(' ')[4];
+    document.querySelector(`.led[data-io="${i}"]`).className='led '+(lv==='HIGH'?'hi':'lo');
+    document.querySelector(`.io-txt[data-io="${i}"]`).textContent=lv;
+    toast(`IO${i+1} = ${lv}`,'info');
+  } else toast('读失败: '+errCode(r[0]),'error');
+}
+async function ioToggle(i){
+  const r=await sendCommand(`IO TOGGLE IO${i+1}`);
+  if(r[0].startsWith('OK'))ioRead(i); else toast('翻转失败','error');
+}
+async function ioPulse(i){
+  const ms=document.querySelector(`.io-pulse-ms[data-io="${i}"]`).value;
+  const r=await sendCommand(`IO PULSE IO${i+1} LOW ${ms}`);
+  if(r[0].startsWith('OK'))toast(`IO${i+1} 脉冲 ${ms}ms`,'success'); else toast('脉冲失败: '+errCode(r[0]),'error');
+}
+async function ioEvent(i){
+  const mode=document.querySelector(`.io-evt[data-io="${i}"]`).value;
+  const r=await sendCommand(`IO EVENT IO${i+1} ${mode==='0'?'OFF':'ON '+(mode==='1'?'RISING':mode==='2'?'FALLING':'CHANGE')}`);
+  if(r[0].startsWith('OK'))toast(`IO${i+1} 事件已${mode==='0'?'关闭':'开启'}`,'success'); else toast('事件配置失败','error');
+}
+
+/* ==================== PWM ==================== */
+const pwmNames=['PWM1','PWM2','PWM3','PWM4'];
+async function pwmApply(i){
+  const f=$('pwmGrid').querySelector(`.p-freq[data-p="${i}"]`).value;
+  const d=$('pwmGrid').querySelector(`.p-duty[data-p="${i}"]`).value;
+  const r=await sendCommand(`PWM CFG ${pwmNames[i]} ${f} ${d}`);
+  r[0].startsWith('OK')?toast(`${pwmNames[i]} ${f}Hz ${d}%`,'success'):toast('配置失败: '+errCode(r[0]),'error');
+}
+async function pwmStart(i){ const r=await sendCommand(`PWM START ${pwmNames[i]}`); r[0].startsWith('OK')?toast(`${pwmNames[i]} 启动`,'success'):toast('失败: '+errCode(r[0]),'error'); }
+async function pwmStop(i){ const r=await sendCommand(`PWM STOP ${pwmNames[i]}`); r[0].startsWith('OK')?toast(`${pwmNames[i]} 停止`,'info'):toast('失败: '+errCode(r[0]),'error'); }
+async function pwmRead(i){ const r=await sendCommand(`PWM READ ${pwmNames[i]}`); r[0].startsWith('OK')?toast(r[0].slice(3),'info'):toast('读取失败','error'); }
+async function pwmPol(i,v){
+  const r=await sendCommand(`PWM POL ${pwmNames[i]} ${v?'INVERT':'NORMAL'}`);
+  if(r[0].startsWith('OK')){ pwmInverted[i]=!!v; drawPwmWave(); toast(`${pwmNames[i]} 极性${v?'反转':'正常'}`,'success'); }
+  else toast('失败: '+errCode(r[0]),'error');
+}
+async function pwmSweep(i){
+  const q=(c)=>$('pwmGrid').querySelector(`.${c}[data-p="${i}"]`).value;
+  const r=await sendCommand(`PWM SWEEP ${pwmNames[i]} ${q('p-sw-from')} ${q('p-sw-to')} ${q('p-sw-step')} 0`);
+  r[0].startsWith('OK')?toast(`${pwmNames[i]} 渐变开始`,'success'):toast('失败: '+errCode(r[0]),'error');
+}
+async function doPhase(){
+  const ch=+$('phaseCh').value, ref=+$('phaseRef').value, deg=$('phaseDeg').value;
+  const r=await sendCommand(`PWM PHASE ${pwmNames[ch]} ${pwmNames[ref]} ${deg}`);
+  if(r[0].startsWith('OK')){
+    pwmPhaseDeg[ch]=(+deg)%360; drawPwmWave();
+    toast(`${pwmNames[ch]} 相位 ${deg}°(相对 ${pwmNames[ref]})`,'success');
+  } else toast('失败: '+errCode(r[0]),'error');
+}
+async function doSync(){
+  const r=await sendCommand('PWM SYNC PWM1,PWM2,PWM3,PWM4');
+  if(r[0].startsWith('OK')){ pwmPhaseDeg=[0,0,0,0]; drawPwmWave(); toast('四路同步启动(相位锁定)','success'); }
+  else toast('失败: '+errCode(r[0]),'error');
+}
+async function doPhadj(){
+  const ch=+$('phadjCh').value, t=+$('phadjTicks').value;
+  const r=await sendCommand(`PWM PHADJ ${pwmNames[ch]} ${t}`);
+  if(r[0].startsWith('OK')){
+    // 粗略换算:tick -> 度(div≈1 时的 top≈125MHz/freq)
+    const f=pwmFreq(ch);
+    pwmPhaseDeg[ch]=(((pwmPhaseDeg[ch]+ t*360*f/125000000)%360)+360)%360;
+    drawPwmWave();
+    toast(`${pwmNames[ch]} 相位微调 ${t} tick`,'success');
+  } else toast('失败: '+errCode(r[0]),'error');
+}
+
+/* ==================== UART ==================== */
+async function uartCfg(n){
+  const b=$('u'+n+'baud').value, db=$('u'+n+'db').value, pa=$('u'+n+'par').value, sb=$('u'+n+'sb').value;
+  const r=await sendCommand(`UART CFG USART${n} ${b} ${db} ${pa} ${sb}`);
+  r[0].startsWith('OK')?toast(`USART${n} 配置 ${b}bps`,'success'):toast('配置失败: '+errCode(r[0]),'error');
+}
+async function uartTx(n,kind){
+  const v=$('u'+n+'tx').value;
+  if(!v){toast('请输入内容','error');return;}
+  const cmd=`UART TX USART${n} `+(kind==='hex'?'HEX:':'TXT:')+v;
+  const r=await sendCommand(cmd);
+  r[0].startsWith('OK')?(toast(`USART${n} 已发送 ${r[0].split(' ')[4]||''} 字节`,'success'),addLog('u'+n+'log','TX: '+v,'tx')):toast('发送失败: '+errCode(r[0]),'error');
+}
+async function uartRx(n){
+  const r=await sendCommand(`UART RX USART${n} 1024`);
+  if(r[0].startsWith('OK')){
+    const hex=(r[0].split('HEX:')[1]||'');
+    $('u'+n+'rx').textContent=hex||'(空)';
+    addLog('u'+n+'log','RX: '+hexToAscii(hex),'rx');
+  }else toast('读取失败','error');
+}
+async function uartFlush(n){ const r=await sendCommand(`UART FLUSH USART${n}`); toast('缓冲已清空','info'); }
+async function uartStat(n){ const r=await sendCommand(`UART STAT USART${n}`); if(r[0].startsWith('OK'))toast(r[0].slice(3),'info'); }
+async function uartStream(n,on){ const r=await sendCommand(`UART STREAM USART${n} ${on?'ON':'OFF'}`); r[0].startsWith('OK')?toast(`USART${n} 透传已${on?'开启':'关闭'}`,'success'):toast('失败','error'); }
+
+/* ==================== I2C ==================== */
+function i2cH(v){ return parseInt(v||'0',16); }
+async function i2cApply(){
+  const r=await sendCommand(`I2C CFG ${$('i2cRate').value}`);
+  r[0].startsWith('OK')?toast(`I2C 速率 ${$('i2cRate').value}kHz`,'success'):toast('失败','error');
+}
+async function i2cScan(){
+  const r=await sendCommand('I2C SCAN',{multiline:true});
+  if(!r[0].startsWith('OK')){toast('扫描失败','error');return;}
+  const devs=r.slice(1).filter(l=>l.trim().startsWith('0x')).map(l=>l.trim().toUpperCase());
+  $('i2cDevices').innerHTML = devs.length
+    ? devs.map(d=>`<span class="chip" onclick="$('i2cAddr').value='${d.slice(2)}'">${d}</span>`).join('')
+    : '<div class="empty-hint">未找到设备</div>';
+  addLog('i2cLog',`扫描: ${devs.length?('找到 '+devs.join(', ')):'无设备'}`,devs.length?'rx':'err');
+  toast(devs.length?`找到 ${devs.length} 个设备`:'无设备','info');
+}
+async function i2cRead(){
+  const addr=i2cH($('i2cAddr').value),reg=i2cH($('i2cReg').value),len=$('i2cLen').value;
+  const r=await sendCommand(`I2C READ 0x${addr.toString(16).toUpperCase()} 0x${reg.toString(16).toUpperCase()} ${len}`);
+  if(r[0].startsWith('OK')){
+    const hex=(r[0].split('HEX:')[1]||'');
+    addLog('i2cLog',`读 0x${addr.toString(16).toUpperCase()} reg=0x${reg.toString(16).toUpperCase()} → ${hex}`,'rx');
+    toast('读取成功','success');
+  } else toast('读取失败: '+errCode(r[0]),'error');
+}
+async function i2cReadOnly(){
+  const addr=i2cH($('i2cAddr').value),len=$('i2cLen').value;
+  const r=await sendCommand(`I2C RONLY 0x${addr.toString(16).toUpperCase()} ${len}`);
+  r[0].startsWith('OK')?toast('直读成功','success'):toast('直读失败: '+errCode(r[0]),'error');
+}
+async function i2cWrite(){
+  const addr=i2cH($('i2cWAddr').value),reg=i2cH($('i2cWReg').value),data=$('i2cWData').value.trim();
+  const r=await sendCommand(`I2C WRITE 0x${addr.toString(16).toUpperCase()} 0x${reg.toString(16).toUpperCase()} ${data}`);
+  r[0].startsWith('OK')?(addLog('i2cLog',`写 0x${addr.toString(16).toUpperCase()} reg=0x${reg.toString(16).toUpperCase()} ${data}`,'tx'),toast('写入成功','success')):toast('写入失败: '+errCode(r[0]),'error');
+}
+async function i2cWOnly(){
+  const addr=i2cH($('i2cWAddr').value),data=$('i2cWData').value.trim();
+  const r=await sendCommand(`I2C WRONLY 0x${addr.toString(16).toUpperCase()} ${data}`);
+  r[0].startsWith('OK')?toast('直写成功','success'):toast('直写失败: '+errCode(r[0]),'error');
+}
+
+/* ==================== SPI ==================== */
+async function spiApply(){
+  const r=await sendCommand(`SPI CFG ${$('spiSpeed').value} ${$('spiMode').value} ${$('spiOrder').value} ${$('spiBits').value}`);
+  r[0].startsWith('OK')?toast('SPI 配置已应用','success'):toast('失败: '+errCode(r[0]),'error');
+}
+async function spiXfr(){
+  const hex=$('spiTx').value.replace(/\s+/g,'').toUpperCase();
+  if(!hex){toast('请输入 HEX 数据','error');return;}
+  const r=await sendCommand(`SPI XFR HEX:${hex}`);
+  if(r[0].startsWith('OK')){
+    const rx=(r[0].split('HEX:')[1]||'');
+    $('spiRx').textContent=rx; $('spiRx').className='result ok';
+    addLog('spiLog',`TX ${hex} → RX ${rx}`,'rx'); toast('传输完成','success');
+  } else { $('spiRx').className='result err'; $('spiRx').textContent=r[0]; toast('传输失败: '+errCode(r[0]),'error'); }
+}
+async function spiWrite(){ const hex=$('spiTx').value.replace(/\s+/g,'').toUpperCase(); const r=await sendCommand(`SPI WRITE HEX:${hex}`); r[0].startsWith('OK')?toast('写入完成','success'):toast('失败','error'); }
+async function spiRead(){ const r=await sendCommand('SPI READ 4'); r[0].startsWith('OK')?(addLog('spiLog','读:'+r[0].split('HEX:')[1],'rx'),toast('读取完成','success')):toast('失败','error'); }
+async function spiCs(m){ const r=await sendCommand(`SPI CS ${['AUTO','LOW','HIGH'][m]}`); r[0].startsWith('OK')?toast('CS '+(['自动','拉低','拉高'][m]),'info'):toast('失败','error'); }
+function spiTemplate(v){ $('spiTx').value=v; toast('已加载模板','info'); }
+
+/* ==================== ADC ==================== */
+async function adcRead(i){
+  const r=await sendCommand(`ADC READ ADC${i}`);
+  if(r[0].startsWith('OK')){
+    const p=r[0].split(' ');
+    $('adcVal'+i).textContent=p[4]; $('adcMv'+i).textContent=p[5].replace('mV','')+' mV';
+  } else toast('读取失败','error');
+}
+async function adcReadAll(){
+  const r=await sendCommand('ADC READALL',{multiline:true});
+  if(r[0].startsWith('OK')){
+    const lines=r.slice(1,r.length-1).map(l=>l.trim()).join('  ');
+    showResult('adcAllResult',lines,'ok');
+  } else showResult('adcAllResult',r[0],'err');
+}
+async function adcTemp(){
+  const r=await sendCommand('ADC TEMP');
+  if(r[0].startsWith('OK')){showResult('adcAllResult',r[0].slice(8),'ok');toast('温度: '+r[0].split('C')[0].split(' ').pop()+'°C','success');}
+  else showResult('adcAllResult',r[0],'err');
+}
+// ---- 采样流 + 图表 ----
+const chart={buf:[],running:false};
+function drawChart(){
+  const c=$('adcChart'), ctx=c.getContext('2d'), W=c.width, H=c.height;
+  ctx.clearRect(0,0,W,H);
+  const N=chart.buf.length; if(!N){return;}
+  const max=Math.max(...chart.buf,1), min=Math.min(...chart.buf,0);
+  const span=Math.max(max-min,1);
+  ctx.beginPath();
+  for(let i=0;i<N;i++){
+    const x=i/(N-1)*W, y=H-(chart.buf[i]-min)/span*(H-8)-4;
+    i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+  }
+  ctx.strokeStyle='#5b6ee1'; ctx.lineWidth=2; ctx.stroke();
+  ctx.fillStyle='#94a3b8'; ctx.font='12px sans-serif';
+  ctx.fillText('max '+max,8,14); ctx.fillText('min '+min,8,H-6);
+  $('adcChartInfo').textContent=`样本 ${N} · 当前 ${chart.buf[N-1]||0}`;
+}
+function pushSamples(vals){
+  for(const v of vals){ const n=parseInt(v); if(!isNaN(n)){ chart.buf.push(n); if(chart.buf.length>300)chart.buf.shift(); } }
+  drawChart();
+}
+async function adcStreamStart(){
+  if(!requireConn())return;
+  const ch=$('adcStreamCh').value, rate=$('adcStreamRate').value, ms=$('adcStreamMs').value;
+  chart.buf=[]; drawChart();
+  const r=await sendCommand(`ADC SAMPLE ADC${ch} ${rate} ${ms}`);
+  if(r[0].startsWith('OK')){
+    chart.running=true; $('adcStreamState').textContent='采样中'; $('adcStreamState').className='badge';
+    toast(`采样开始 ADC${ch} ${rate}Hz`,'success');
+    setTimeout(()=>{ if(chart.running){chart.running=false;$('adcStreamState').textContent='已结束';$('adcStreamState').className='badge';} }, +ms+400);
+  } else toast('启动失败: '+errCode(r[0]),'error');
+}
+async function adcStreamStop(){ const r=await sendCommand('ADC SAMPLE ADC0 STOP'); chart.running=false; $('adcStreamState').textContent='未启动'; $('adcStreamState').className='badge'; }
+async function adcThresh(on){
+  const ch=$('threshCh').value;
+  const r=on?await sendCommand(`ADC THRESH ADC${ch} ${$('threshLo').value} ${$('threshHi').value} ON`)
+            :await sendCommand(`ADC THRESH ADC${ch} 0 0 OFF`);
+  r[0].startsWith('OK')?toast(`阈值已${on?'启用':'关闭'}`,'success'):toast('失败: '+errCode(r[0]),'error');
+}
+
+/* ==================== SEQ ==================== */
+async function seqDef(){
+  const r=await sendCommand(`SEQ DEF ${$('seqName').value} "${$('seqScript').value}"`);
+  r[0].startsWith('OK')?toast('序列已定义','success'):toast('定义失败: '+errCode(r[0]),'error');
+}
+async function seqRun(){
+  const r=await sendCommand(`SEQ RUN ${$('seqRunName').value} ${$('seqRepeat').value}`);
+  r[0].startsWith('OK')?toast('序列已运行','success'):toast('运行失败: '+errCode(r[0]),'error');
+}
+async function seqStop(){ const r=await sendCommand('SEQ STOP'); r[0].startsWith('OK')?toast('已停止','info'):toast('未在运行','info'); }
+async function seqStat(){ const r=await sendCommand('SEQ STAT'); showResult('seqStatResult',r[0].slice(3),r[0].startsWith('OK')?'ok':'err'); }
+async function seqList(){ const r=await sendCommand('SEQ LIST'); showResult('seqListResult',r[0].slice(3),'ok'); }
+async function seqShow(){
+  const r=await sendCommand(`SEQ SHOW ${$('seqName').value}`);
+  showResult('seqListResult',r[0].slice(3),r[0].startsWith('OK')?'ok':'err');
+}
+async function seqDel(){ const r=await sendCommand(`SEQ DEL ${$('seqName').value}`); r[0].startsWith('OK')?toast('已删除','info'):toast('删除失败','error'); }
+
+/* ==================== 终端 ==================== */
+/* ---- 时间同步(主机 → 从机,单向) ---- */
+let syncTimer=null, syncCnt=0, syncOffset=0, prevOffset=0, syncIv=1000, syncDrift=0;
+async function syncOnce(){
+  const T1=Math.round(performance.now()*1000); // 主机单调时钟,µs
+  const r=await sendCommand(`SYNC ${T1}`);
+  if(!r[0].startsWith('OK')) return;
+  const m=r[0].match(/offset=(-?\d+)/);
+  if(!m) return;
+  if(syncCnt){ syncDrift=(parseInt(m[1])-prevOffset)/(syncIv/1000); } // µs/s
+  prevOffset=syncOffset=parseInt(m[1]);
+  syncCnt++;
+  $('syncOffset').textContent=(syncOffset/1000).toFixed(3)+' ms';
+  $('syncDrift').textContent=(syncDrift/1000).toFixed(3)+' ms/s';
+  $('syncCount').textContent=syncCnt;
+}
+function syncStart(){
+  if(syncTimer) return;
+  if(!requireConn()) return;
+  syncIv=parseInt($('syncInterval').value);
+  syncOnce();
+  syncTimer=setInterval(syncOnce, syncIv);
+  $('syncBtn').disabled=true;
+  toast('时间同步已开始','success');
+}
+function syncStop(){
+  if(syncTimer){ clearInterval(syncTimer); syncTimer=null; }
+  $('syncBtn').disabled=false;
+  toast('时间同步已停止','info');
+}
+async function termSend(){
+  const v=$('termInput').value.trim(); if(!v)return;
+  termLine('tx',v);
+  try{
+    const multiline=['INFO','IO READALL','I2C SCAN','ADC READALL','HELP'].includes(v.split(' ')[0]);
+    const r=await sendCommand(v,{multiline});
+    r.forEach(l=>termLine('rx',l));
+  }catch(e){ termLine('err','超时或失败: '+e.message); }
+  $('termInput').value='';
+}
+$('termInput').addEventListener('keydown',e=>{ if(e.key==='Enter')termSend(); });
+function termClear(){ $('termLog').innerHTML='<div class="dim">已清空</div>'; }
+
+/* ==================== 系统 / 固件烧录 ==================== */
+async function sysPing(){
+  if(!requireConn())return;
+  try{ const r=await sendCommand('PING'); showResult('sysResult', r[0],'ok'); }
+  catch(e){ showResult('sysResult','PING 失败','err'); }
+}
+function sysReset(){
+  if(!requireConn())return;
+  if(!confirm('确定软复位板卡?复位后串口会断开,需重新连接。'))return;
+  sendRaw('RESET');
+  toast('已发送复位命令,板卡即将重启','info');
+  setTimeout(disconnect,600);
+}
+function sysBootloader(){
+  if(!requireConn())return;
+  if(!confirm('进入烧写模式后串口会断开,板卡会变成一个 U 盘。确定继续?'))return;
+  sendRaw('BOOTLOADER');
+  toast('已进入烧写模式,请等待板卡枚举为 U 盘后拖入固件文件','success');
+  setTimeout(disconnect,800);
+}
+
+console.log('✅ IO Dock 控制台已加载');
+</script>
+</body>
+</html>

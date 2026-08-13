@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IO Dock · 二进制协议手册</title>
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--ink:#1e293b;--muted:#64748b;--line:#e6eaf2;
+  --primary:#5b6ee1;--mint:#10b981;--coral:#ef5b5b;--sky:#3aa0ff;--peach:#f59e0b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:
+  radial-gradient(1200px 500px at 10% -10%,#eef1fd,transparent 50%),var(--bg);color:var(--ink);font-size:14px}
+.wrap{max-width:1120px;margin:0 auto;padding:22px 18px 60px}
+header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+.logo{width:44px;height:44px;border-radius:13px;background:linear-gradient(135deg,#ef5b5b,#f59e0b);
+  display:grid;place-items:center;color:#fff;font-size:20px}
+.brand h1{font-size:19px}.brand p{color:var(--muted);font-size:12.5px}
+.conn{margin-left:auto;display:flex;align-items:center;gap:10px}
+.btn{font:inherit;border:none;border-radius:10px;padding:8px 14px;cursor:pointer;font-weight:600;transition:.15s}
+.btn.primary{background:var(--primary);color:#fff}.btn.mint{background:var(--mint);color:#fff}
+.btn.coral{background:var(--coral);color:#fff}.btn.ghost{background:#fff;border:1.5px solid var(--line)}
+.btn.sm{padding:5px 10px;font-size:12.5px}.btn:disabled{opacity:.45;cursor:not-allowed}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px}
+.dot.gray{background:#cbd5e1}.dot.green{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18)}
+.dot.orange{background:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.18)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 4px 18px rgba(30,41,59,.05);margin-bottom:14px}
+.cat{font-size:15px;font-weight:700;margin:22px 2px 10px;display:flex;align-items:center;gap:8px}
+.cat .n{color:var(--muted);font-weight:600;font-size:12px}
+.cmdgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px}
+.cmd{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:#fff;box-shadow:0 2px 8px rgba(30,41,59,.04)}
+.cmd-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cmd-name{font-weight:700;font-family:ui-monospace,Consolas,monospace;font-size:13.5px;color:var(--coral)}
+.cmd-op{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#fff;background:var(--coral);border-radius:6px;padding:1px 7px}
+.cmd-syn{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--muted);word-break:break-all}
+.cmd-desc{color:var(--muted);font-size:12px;margin:6px 0 8px;line-height:1.5}
+.cmd-params{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.cmd-params label{font-size:11px;color:var(--muted)}
+select,input[type=number],input[type=text]{font:inherit;border:1.5px solid var(--line);border-radius:8px;padding:5px 7px;outline:none;font-size:12.5px}
+select:focus,input:focus{border-color:var(--primary)}
+.cmd-actions{margin-top:8px;display:flex;gap:8px;align-items:center}
+.cmd-out{display:none;margin-top:8px;background:#0f172a;color:#a5f3fc;border-radius:8px;padding:8px 10px;
+  font-family:ui-monospace,Consolas,monospace;font-size:12px;line-height:1.6}
+.cmd-out .sent{display:flex;align-items:center;gap:8px;justify-content:space-between;color:#c7d2fe;
+  border-bottom:1px dashed rgba(255,255,255,.15);padding-bottom:6px;margin-bottom:6px}
+.cmd-out .sent code{font-family:ui-monospace,Consolas,monospace;font-size:12px;word-break:break-all}
+.cmd-out .sent .btn{background:rgba(255,255,255,.12);color:#e2e8f0;border:none;font-size:11px;padding:3px 9px;border-radius:7px;white-space:nowrap}
+.cmd-out .sent .btn:hover{background:rgba(255,255,255,.25)}
+.cmd-out .resp{white-space:pre-wrap;word-break:break-all}
+.cmd-out .resp.err{color:#fda4af}
+.pv-title{font-size:11px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+.bmap{display:flex;flex-wrap:wrap;gap:3px;background:#0f172a;border-radius:8px;padding:8px 10px;overflow-x:auto}
+.bgrp{display:flex;flex-direction:column;align-items:center;border-radius:5px;padding:3px 4px;background:var(--c)}
+.brow{display:flex}
+.cell{width:30px;text-align:center;font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#0f172a;line-height:1.6}
+.blbl{font-size:10px;color:#1e293b;margin-top:2px;text-align:center;line-height:1.2;max-width:120px;white-space:pre-line;font-weight:600;word-break:break-all}
+.notice{background:#fdeef0;border:1px solid #f6d0d6;border-radius:12px;padding:10px 14px;color:#8f3a4a;font-size:12.5px;margin-bottom:8px;line-height:1.6}
+.nav{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.nav a{text-decoration:none;font-size:12px;font-weight:600;padding:4px 12px;border-radius:999px;background:#fff;border:1.5px solid var(--line);color:var(--muted)}
+.nav a:hover{border-color:var(--primary);color:var(--primary)}
+.log{background:#fbfcfe;border:1px solid var(--line);border-radius:10px;padding:10px;height:220px;overflow-y:auto;
+  font-family:ui-monospace,Consolas,monospace;font-size:12px;margin-top:8px}
+.log div{padding:1px 3px}
+.log .tx{color:#ef5b5b}.log .resp{color:#16a34a}.log .err{color:#dc2626}.log .evt{color:#f59e0b}.log .data{color:#3aa0ff}
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl td,.tbl th{border:1px solid var(--line);padding:5px 9px;text-align:left;vertical-align:top}
+.tbl th{background:var(--bg);font-weight:600}
+code,.mono{font-family:ui-monospace,Consolas,monospace}
+.toasts{position:fixed;top:16px;right:16px;z-index:99;display:flex;flex-direction:column;gap:8px}
+.toast{background:#fff;border-radius:12px;padding:10px 14px;box-shadow:0 8px 24px rgba(30,41,59,.16);border-left:4px solid var(--primary);animation:slide .25s}
+.toast.success{border-left-color:var(--mint)}.toast.error{border-left-color:var(--coral)}
+@keyframes slide{from{opacity:0;transform:translateX(16px)}}
+</style>
+</head>
+<body>
+<div class="toasts" id="toasts"></div>
+<div class="wrap">
+  <header>
+    <div class="logo">🔣</div>
+    <div class="brand">
+      <h1>IO Dock · 二进制协议手册</h1>
+      <p>高速模式命令集(SOF + 帧头 + CRC16)· 全部可编辑参数并发送,实时解析响应与事件</p>
+    </div>
+    <div class="conn">
+      <button class="btn primary" onclick="connect()">🔌 连接(进入二进制)</button>
+      <button class="btn ghost" onclick="exitToText()" id="btnText" disabled>退出到文本</button>
+      <button class="btn ghost" onclick="disconnect()" id="btnDisc" disabled>断开</button>
+      <span><span class="dot gray" id="statusDot"></span><span id="statusTxt">未连接</span></span>
+    </div>
+  </header>
+
+  <div class="notice">
+    二进制高速模式与<b>文本模式</b>共享同一功能集,但用紧凑二进制帧 + CRC16 传输,面向自动化/大流量。连接后页面自动发送
+    <code>BIN ENTER</code> 进入二进制模式(回 <code>OK BIN</code> 后切换);退出用系统命令 <code>MODE_EXIT(0x0F)</code> 或
+    <code>RESET</code>。模式不自动混用;若失步,可重新插拔或 RESET。
+  </div>
+
+  <div class="card">
+    <h3 style="font-size:14px;margin-bottom:8px">🧩 帧格式</h3>
+    <table class="tbl">
+      <tr><th>偏移</th><th>大小</th><th>字段</th><th>说明</th></tr>
+      <tr><td class="mono">0</td><td>1</td><td class="mono">SOF</td><td><code>0xCB</code>,固定帧起始标记</td></tr>
+      <tr><td class="mono">1</td><td>1</td><td class="mono">TYPE</td><td>0x01 CMD / 0x02 RESP / 0x03 ERR / 0x04 EVT / 0x05 DATA / 0x06 DATA_END</td></tr>
+      <tr><td class="mono">2</td><td>1</td><td class="mono">OP</td><td>操作码(命令编号;流/事件中为流标识)</td></tr>
+      <tr><td class="mono">3</td><td>1</td><td class="mono">FLAGS</td><td>bit0=1 表示还有后续帧(分片);其余保留</td></tr>
+      <tr><td class="mono">4-5</td><td>2</td><td class="mono">LEN</td><td>载荷长度,u16 小端(上限默认 4096)</td></tr>
+      <tr><td class="mono">6-7</td><td>2</td><td class="mono">SEQ</td><td>请求序号,u16 小端;响应原样回显;事件/流=0</td></tr>
+      <tr><td class="mono">8..</td><td>LEN</td><td class="mono">PAYLOAD</td><td>载荷(小端编码)</td></tr>
+      <tr><td class="mono">..+LEN</td><td>2</td><td class="mono">CRC16</td><td>CCITT(0x1021,初值 0xFFFF),对偏移 0~(7+LEN) 计算</td></tr>
+    </table>
+    <div style="color:var(--muted);font-size:12px;margin-top:8px">编码:通道/电平/枚举见各命令;数值一律小端;二进制数据原样传输(无需 HEX 编码)。</div>
+  </div>
+
+  <div class="nav" id="nav"></div>
+  <div id="cats"></div>
+
+  <div class="card">
+    <h3 style="font-size:14px;margin-bottom:4px">📡 事件 / 数据流</h3>
+    <div class="log" id="evtLog"><div class="evt">— 连接并进入二进制模式后,此处显示 EVT/DATA 帧 —</div></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+function toast(m,t='info'){
+  const el=document.createElement('div');el.className='toast '+t;el.textContent=m;
+  $('toasts').appendChild(el);setTimeout(()=>{el.style.opacity=0;el.style.transition='.3s';setTimeout(()=>el.remove(),300)},2600);
+}
+function hexClean(s){return String(s).replace(/[^0-9a-fA-F]/g,'');}
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+function hexBytes(u){return Array.from(u).map(b=>b.toString(16).padStart(2,'0').toUpperCase()).join('');}
+
+/* ---------------- 命令集定义 ---------------- */
+const CH_IO  =['IO1','IO2','IO3','IO4','IO5','IO6'];
+const CH_PWM =['PWM1','PWM2','PWM3','PWM4'];
+const CH_UART=['USART1','USART2'];
+const CH_ADC =['ADC0','ADC1','ADC2'];
+
+const CMDS=[
+ // ---- 系统 ----
+ {cat:'系统',op:0x00,name:'PING',syn:'[]',desc:'在线检查;响应 magic + 固件版本',fields:[],resp:'magic:u8=0x4F, fw:u8 u8 u8'},
+ {cat:'系统',op:0x01,name:'INFO',syn:'[]',desc:'板卡与固件信息(TLV 键值对)',fields:[],resp:'TLV: tag/val 长度前缀'},
+ {cat:'系统',op:0x02,name:'RESET',syn:'[]',desc:'软复位',fields:[],resp:'[]'},
+ {cat:'系统',op:0x03,name:'BOOTLOADER',syn:'[]',desc:'进入 UF2 下载模式',fields:[],resp:'[]'},
+ {cat:'系统',op:0x04,name:'LED',syn:'[on:u8]',desc:'指示灯开关',fields:[{label:'on',type:'u8',opts:[['OFF','0'],['ON','1']],def:'0'}],resp:'[]'},
+ {cat:'系统',op:0x0C,name:'SYNC',syn:'[host_us:u64]',desc:'时间同步(单向)',fields:[{label:'host_us',type:'u64',ph:'微秒',def:''}],resp:'[local:u64][offset:i64][synced:u64]'},
+ {cat:'系统',op:0x0D,name:'TIME',syn:'[]',desc:'查询时间',fields:[],resp:'[local:u64][offset:i64][synced:u64]'},
+ {cat:'系统',op:0x0F,name:'MODE_EXIT',syn:'[]',desc:'退出二进制,回到文本模式',fields:[],resp:'[]'},
+
+ // ---- IO ----
+ {cat:'IO',op:0x10,name:'IO_CFG',syn:'[ch][dir][pull]',desc:'配置方向与上下拉',fields:[
+   {label:'通道',type:'ch',ch:'io'},{label:'方向',type:'u8',opts:[['OUT','0'],['IN','1']],def:'0'},
+   {label:'上拉',type:'u8',opts:[['FLOAT','0'],['PULLUP','1'],['PULLDOWN','2']],def:'0'}],resp:'[]'},
+ {cat:'IO',op:0x11,name:'IO_WRITE',syn:'[ch][level]',desc:'输出电平',fields:[
+   {label:'通道',type:'ch',ch:'io'},{label:'电平',type:'u8',opts:[['LOW','0'],['HIGH','1']],def:'0'}],resp:'[]'},
+ {cat:'IO',op:0x12,name:'IO_READ',syn:'[ch]',desc:'读输入电平',fields:[{label:'通道',type:'ch',ch:'io'}],resp:'[ch][level]'},
+ {cat:'IO',op:0x13,name:'IO_READALL',syn:'[]',desc:'读全部 6 路(位图)',fields:[],resp:'[levels:u8]'},
+ {cat:'IO',op:0x14,name:'IO_TOGGLE',syn:'[ch]',desc:'翻转输出',fields:[{label:'通道',type:'ch',ch:'io'}],resp:'[]'},
+ {cat:'IO',op:0x15,name:'IO_PULSE',syn:'[ch][level][ms:u16]',desc:'输出脉冲',fields:[
+   {label:'通道',type:'ch',ch:'io'},{label:'电平',type:'u8',opts:[['LOW','0'],['HIGH','1']],def:'0'},
+   {label:'ms',type:'u16',def:'200',min:1}],resp:'[]'},
+ {cat:'IO',op:0x16,name:'IO_EVENT',syn:'[ch][mode:u8]',desc:'输入变化事件(0=OFF,1=RISING,2=FALLING,3=CHANGE)',fields:[
+   {label:'通道',type:'ch',ch:'io'},{label:'模式',type:'u8',opts:[['OFF','0'],['RISING','1'],['FALLING','2'],['CHANGE','3']],def:'0'}],resp:'[]'},
+
+ // ---- PWM ----
+ {cat:'PWM',op:0x20,name:'PWM_CFG',syn:'[ch][freq:u32][duty:u16]',desc:'配置频率与占空比(占空比 0~65535 原始值)',fields:[
+   {label:'通道',type:'ch',ch:'pwm'},{label:'freq',type:'u32',def:'1000',min:1},
+   {label:'duty',type:'u16',def:'32768',min:0,max:65535,note:'原始值'}],resp:'[]'},
+ {cat:'PWM',op:0x21,name:'PWM_FREQ',syn:'[ch][freq:u32]',desc:'修改频率',fields:[
+   {label:'通道',type:'ch',ch:'pwm'},{label:'freq',type:'u32',def:'1000',min:1}],resp:'[]'},
+ {cat:'PWM',op:0x22,name:'PWM_DUTY',syn:'[ch][duty:u16]',desc:'修改占空比(原始值)',fields:[
+   {label:'通道',type:'ch',ch:'pwm'},{label:'duty',type:'u16',def:'32768',min:0,max:65535}],resp:'[]'},
+ {cat:'PWM',op:0x23,name:'PWM_START',syn:'[ch]',desc:'启动输出',fields:[{label:'通道',type:'ch',ch:'pwm'}],resp:'[]'},
+ {cat:'PWM',op:0x24,name:'PWM_STOP',syn:'[ch]',desc:'停止输出',fields:[{label:'通道',type:'ch',ch:'pwm'}],resp:'[]'},
+ {cat:'PWM',op:0x25,name:'PWM_SWEEP',syn:'[ch][from:u16][to:u16][step_ms:u16][repeat:u16]',desc:'渐变;repeat 0=无限',fields:[
+   {label:'通道',type:'ch',ch:'pwm'},{label:'from',type:'u16',def:'0',min:0,max:65535},{label:'to',type:'u16',def:'65535',min:0,max:65535},
+   {label:'step_ms',type:'u16',def:'10',min:1},{label:'repeat',type:'u16',def:'0',min:0}],resp:'[]'},
+ {cat:'PWM',op:0x26,name:'PWM_READ',syn:'[ch]',desc:'查询状态',fields:[{label:'通道',type:'ch',ch:'pwm'}],resp:'[ch][freq:u32][duty:u16][running:u8][inv:u8]'},
+ {cat:'PWM',op:0x27,name:'PWM_SYNC',syn:'[n:u8][ch×n]',desc:'同步重启列出的通道(须同频)',fields:[
+   {label:'通道列表',type:'chlist',ch:'pwm',def:'PWM1,PWM2',ph:'PWM1,PWM2,PWM3',wide:true}],resp:'[]'},
+ {cat:'PWM',op:0x28,name:'PWM_PHASE',syn:'[ch][ref][unit:u8][val:u16]',desc:'相位偏移(unit 0=度,1=ticks)',fields:[
+   {label:'通道',type:'ch',ch:'pwm'},{label:'参照',type:'ch',ch:'pwm'},
+   {label:'unit',type:'u8',opts:[['度','0'],['ticks','1']],def:'0'},{label:'val',type:'u16',def:'90',min:0,max:65535}],resp:'[]'},
+ {cat:'PWM',op:0x29,name:'PWM_PHADJ',syn:'[ch][delta:i16]',desc:'运行中在线微调相位',fields:[
+   {label:'通道',type:'ch',ch:'pwm'},{label:'delta',type:'i16',def:'1'}],resp:'[]'},
+ {cat:'PWM',op:0x2A,name:'PWM_POL',syn:'[ch][inv:u8]',desc:'输出极性(INVERT=1 等效 180°)',fields:[
+   {label:'通道',type:'ch',ch:'pwm'},{label:'inv',type:'u8',opts:[['NORMAL','0'],['INVERT','1']],def:'0'}],resp:'[]'},
+ {cat:'PWM',op:0x2B,name:'PWM_TICK',syn:'[ch][freq:u32]',desc:'1Hz 回调+真实输出;freq=0 关闭。随后 EVT 帧 op=0x2B [count:u32]',fields:[
+   {label:'通道',type:'ch',ch:'pwm'},{label:'freq(0=OFF)',type:'u32',def:'1',min:0}],resp:'[]'},
+
+ // ---- UART ----
+ {cat:'UART',op:0x30,name:'UART_CFG',syn:'[ch][baud:u32][databits:u8][parity:u8][stopbits:u8]',desc:'配置串口',fields:[
+   {label:'通道',type:'ch',ch:'uart'},{label:'baud',type:'u32',def:'115200',min:1200},
+   {label:'databits',type:'u8',opts:[['8','8'],['7','7'],['6','6'],['5','5']],def:'8'},
+   {label:'parity',type:'u8',opts:[['N','0'],['O','1'],['E','2']],def:'0'},{label:'stopbits',type:'u8',opts:[['1','1'],['2','2']],def:'1'}],resp:'[]'},
+ {cat:'UART',op:0x31,name:'UART_TX',syn:'[ch][len:u16][data]',desc:'发送数据(len 自动)',fields:[
+   {label:'通道',type:'ch',ch:'uart'},{label:'数据',type:'hex',def:'48656C6C6F',ph:'hex bytes',wide:true}],resp:'[sent:u16]'},
+ {cat:'UART',op:0x32,name:'UART_RX',syn:'[ch][max:u16]',desc:'读接收缓冲',fields:[
+   {label:'通道',type:'ch',ch:'uart'},{label:'max',type:'u16',def:'64',min:1}],resp:'[ch][len:u16][data]'},
+ {cat:'UART',op:0x33,name:'UART_FLUSH',syn:'[ch]',desc:'清空缓冲',fields:[{label:'通道',type:'ch',ch:'uart'}],resp:'[]'},
+ {cat:'UART',op:0x34,name:'UART_STREAM',syn:'[ch][on:u8]',desc:'接收透传开关',fields:[
+   {label:'通道',type:'ch',ch:'uart'},{label:'on',type:'u8',opts:[['OFF','0'],['ON','1']],def:'0'}],resp:'[]'},
+ {cat:'UART',op:0x35,name:'UART_STAT',syn:'[ch]',desc:'缓冲/错误统计',fields:[{label:'通道',type:'ch',ch:'uart'}],resp:'[rx_len:u16][tx_len:u16][errs:u32]'},
+
+ // ---- I2C ----
+ {cat:'I2C',op:0x40,name:'I2C_CFG',syn:'[rate_khz:u32]',desc:'设置速率',fields:[
+   {label:'速率',type:'u8',opts:[['400','400'],['100','100'],['1000','1000']],def:'400'}],resp:'[]'},
+ {cat:'I2C',op:0x41,name:'I2C_SCAN',syn:'[]',desc:'扫描总线',fields:[],resp:'[count:u8][addr...]'},
+ {cat:'I2C',op:0x42,name:'I2C_WRITE',syn:'[addr:u8][reg:u8][len:u16][data]',desc:'寄存器寻址写',fields:[
+   {label:'addr',type:'hexu8',def:'3C',ph:'hex'},{label:'reg',type:'hexu8',def:'00',ph:'hex'},
+   {label:'数据',type:'hex',def:'AABB',ph:'hex',wide:true}],resp:'[]'},
+ {cat:'I2C',op:0x43,name:'I2C_WRONLY',syn:'[addr:u8][len:u16][data]',desc:'无寄存器地址直写',fields:[
+   {label:'addr',type:'hexu8',def:'3C',ph:'hex'},{label:'数据',type:'hex',def:'AABB',ph:'hex',wide:true}],resp:'[]'},
+ {cat:'I2C',op:0x44,name:'I2C_READ',syn:'[addr:u8][reg:u8][n:u16]',desc:'寄存器寻址读 n 字节',fields:[
+   {label:'addr',type:'hexu8',def:'3C',ph:'hex'},{label:'reg',type:'hexu8',def:'00',ph:'hex'},
+   {label:'n',type:'u16',def:'4',min:1}],resp:'[len:u16][data]'},
+ {cat:'I2C',op:0x45,name:'I2C_RONLY',syn:'[addr:u8][n:u16]',desc:'无寄存器地址直读',fields:[
+   {label:'addr',type:'hexu8',def:'3C',ph:'hex'},{label:'n',type:'u16',def:'4',min:1}],resp:'[len:u16][data]'},
+ {cat:'I2C',op:0x46,name:'I2C_WR',syn:'[addr:u8][reg:u8][n:u16]',desc:'先写后读',fields:[
+   {label:'addr',type:'hexu8',def:'3C',ph:'hex'},{label:'reg',type:'hexu8',def:'00',ph:'hex'},
+   {label:'n',type:'u16',def:'4',min:1}],resp:'[len:u16][data]'},
+
+ // ---- SPI ----
+ {cat:'SPI',op:0x50,name:'SPI_CFG',syn:'[baud:u32][mode:u8][bitorder:u8][bits:u8]',desc:'配置 SPI',fields:[
+   {label:'baud',type:'u32',def:'1000000',min:1},{label:'mode',type:'u8',opts:[['0','0'],['1','1'],['2','2'],['3','3']],def:'0'},
+   {label:'bitorder',type:'u8',opts:[['MSB','1'],['LSB','0']],def:'1'},{label:'bits',type:'u8',opts:[['8','8'],['4','4'],['16','16']],def:'8'}],resp:'[]'},
+ {cat:'SPI',op:0x51,name:'SPI_XFR',syn:'[len:u16][tx:len]',desc:'全双工传输',fields:[
+   {label:'数据',type:'hex',def:'DEADBEEF',ph:'hex',wide:true}],resp:'[len:u16][rx:len]'},
+ {cat:'SPI',op:0x52,name:'SPI_WRITE',syn:'[len:u16][tx:len]',desc:'只发送',fields:[
+   {label:'数据',type:'hex',def:'A5A5',ph:'hex',wide:true}],resp:'[]'},
+ {cat:'SPI',op:0x53,name:'SPI_READ',syn:'[n:u16]',desc:'只接收 n 字节',fields:[{label:'n',type:'u16',def:'4',min:1}],resp:'[len:u16][rx:len]'},
+ {cat:'SPI',op:0x54,name:'SPI_CS',syn:'[mode:u8]',desc:'CS 控制',fields:[
+   {label:'mode',type:'u8',opts:[['AUTO','0'],['LOW','1'],['HIGH','2']],def:'0'}],resp:'[]'},
+
+ // ---- ADC ----
+ {cat:'ADC',op:0x60,name:'ADC_READ',syn:'[ch]',desc:'单次读取',fields:[{label:'通道',type:'ch',ch:'adc'}],resp:'[ch][raw:u16][mv:u16]'},
+ {cat:'ADC',op:0x61,name:'ADC_READALL',syn:'[]',desc:'读取全部 3 路',fields:[],resp:'[raw0][mv0][raw1][mv1][raw2][mv2]'},
+ {cat:'ADC',op:0x62,name:'ADC_SAMPLE_START',syn:'[ch][rate:u32][ms:u32]',desc:'连续采样,随后 DATA 流',fields:[
+   {label:'通道',type:'ch',ch:'adc'},{label:'rate',type:'u32',def:'2000',min:1},
+   {label:'ms',type:'u32',def:'300',min:1}],resp:'[]'},
+ {cat:'ADC',op:0x63,name:'ADC_SAMPLE_STOP',syn:'[ch]',desc:'停止采样',fields:[{label:'通道',type:'ch',ch:'adc'}],resp:'DATA 余量 + DATA_END'},
+ {cat:'ADC',op:0x64,name:'ADC_TEMP',syn:'[]',desc:'读取温度',fields:[],resp:'[m°C:i32]'},
+ {cat:'ADC',op:0x65,name:'ADC_THRESH',syn:'[ch][low_mv:u16][high_mv:u16][on:u8]',desc:'阈值事件',fields:[
+   {label:'通道',type:'ch',ch:'adc'},{label:'low_mv',type:'u16',def:'500',min:0},
+   {label:'high_mv',type:'u16',def:'2500',min:0},{label:'on',type:'u8',opts:[['ON','1'],['OFF','0']],def:'1'}],resp:'[]'},
+
+ // ---- SEQ ----
+ {cat:'SEQ',op:0x70,name:'SEQ_DEF',syn:'[name_len:u8][name][script_len:u16][script]',desc:'定义序列',fields:[
+   {label:'名称',type:'str',def:'blink',wide:true},
+   {label:'脚本',type:'str16',def:'IO IO1 HIGH@0; WAIT 100; IO IO1 LOW@100; WAIT 100',wide:true}],resp:'[]'},
+ {cat:'SEQ',op:0x71,name:'SEQ_LIST',syn:'[]',desc:'列出序列',fields:[],resp:'[count:u8][name_len:u8][name]...'},
+ {cat:'SEQ',op:0x72,name:'SEQ_SHOW',syn:'[name_len:u8][name]',desc:'打印序列',fields:[{label:'名称',type:'str',def:'blink'}],resp:'[script_len:u16][script]'},
+ {cat:'SEQ',op:0x73,name:'SEQ_RUN',syn:'[name_len:u8][name][repeat:u16]',desc:'执行(repeat 0=无限)',fields:[
+   {label:'名称',type:'str',def:'blink'},{label:'repeat',type:'u16',def:'1',min:0}],resp:'[]'},
+ {cat:'SEQ',op:0x74,name:'SEQ_STOP',syn:'[]',desc:'停止序列',fields:[],resp:'[]'},
+ {cat:'SEQ',op:0x75,name:'SEQ_STAT',syn:'[]',desc:'执行状态',fields:[],resp:'[state:u8][name_len:u8][name][remaining:u32][step:u32]'},
+ {cat:'SEQ',op:0x76,name:'SEQ_DEL',syn:'[name_len:u8][name]',desc:'删除序列',fields:[{label:'名称',type:'str',def:'blink'}],resp:'[]'},
+];
+
+/* ---------------- 编码 ---------------- */
+function utf8(s){return new TextEncoder().encode(s);}
+function hexBytesFrom(s){const h=hexClean(s);const o=[];for(let i=0;i+1<h.length;i+=2)o.push(parseInt(h.slice(i,i+2),16));return o;}
+function chArr(cat){return cat==='io'?CH_IO:cat==='pwm'?CH_PWM:cat==='uart'?CH_UART:CH_ADC;}
+function chIdx(cat,name){return chArr(cat).indexOf(String(name).toUpperCase());}
+function readParam(idx,i){const el=$('p_'+idx+'_'+i);return el?el.value:'';}
+function chLabel(cat,val){const a=chArr(cat);return a[+val]??('ch'+val);}
+function payloadSegments(fields,v){
+  const segs=[];
+  const chunk=(label,bytes)=>segs.push({label,bytes:Array.from(bytes)});
+  fields.forEach((f,i)=>{
+    const raw=readParam(v.__idx,i);
+    switch(f.type){
+      case 'ch':chunk(`通道\n${chLabel(f.ch,raw)}`,[+raw&0xff]);break;
+      case 'u8':chunk(`${f.label}\n${raw}`,[+raw&0xff]);break;
+      case 'u16':{const x=+raw;chunk(`${f.label}\n${x}`,[x&0xff,(x>>8)&0xff]);break;}
+      case 'u32':{const x=+raw;chunk(`${f.label}\n${x}`,[x&0xff,(x>>8)&0xff,(x>>16)&0xff,(x>>24)&0xff]);break;}
+      case 'i16':{const x=(+raw)&0xffff;chunk(`${f.label}\n${raw}`,[x&0xff,(x>>8)&0xff]);break;}
+      case 'u64':{const x=+raw||0,lo=x%4294967296,hi=Math.floor(x/4294967296);chunk(`${f.label}\n${x}`,[lo&0xff,(lo>>8)&0xff,(lo>>16)&0xff,(lo>>24)&0xff,hi&0xff,(hi>>8)&0xff,(hi>>16)&0xff,(hi>>24)&0xff]);break;}
+      case 'hexu8':{const db=hexBytesFrom(raw);if(db.length)chunk(`${f.label}\n0x${db[db.length-1].toString(16).padStart(2,'0').toUpperCase()}`,[db[db.length-1]]);break;}
+      case 'hex':{const db=hexBytesFrom(raw),h=db.map(b=>b.toString(16).padStart(2,'0').toUpperCase()).join('');chunk(`${f.label}\n${h.slice(0,24)}${h.length>24?'…':''}`,db);break;}
+      case 'str':{const sb=Array.from(utf8(raw));chunk(`${f.label}\n"${raw.slice(0,12)}${raw.length>12?'…':''}"`,[sb.length,...sb]);break;}
+      case 'str16':{const sb=Array.from(utf8(raw));chunk(`${f.label}\n"${raw.slice(0,12)}${raw.length>12?'…':''}"`,[sb.length&0xff,(sb.length>>8)&0xff,...sb]);break;}
+      case 'chlist':{const parts=raw.split(',').map(s=>s.trim()).filter(Boolean);const idxs=parts.map(p=>chIdx(f.ch,p)).filter(x=>x>=0);chunk(`通道\n${idxs.map(x=>chArr(f.ch)[x]).join(',')}`,[idxs.length,...idxs]);break;}
+    }
+  });
+  return segs;
+}
+function buildPayload(fields,v){
+  const segs=payloadSegments(fields,v),b=[];
+  segs.forEach(s=>b.push(...s.bytes));
+  return {segments:segs,bytes:Uint8Array.from(b)};
+}
+
+/* ---------------- 帧构建 / CRC ---------------- */
+function crc16(data){
+  let c=0xFFFF;
+  for(const b of data){
+    c ^= b << 8;
+    for(let k=0;k<8;k++) c = (c & 0x8000) ? ((c<<1)^0x1021)&0xFFFF : (c<<1)&0xFFFF;
+  }
+  return c & 0xFFFF;
+}
+function buildFrame(type,op,payload,seq){
+  const body=new Uint8Array(8+payload.length);
+  body[0]=0xCB;body[1]=type;body[2]=op;body[3]=0;
+  body[4]=payload.length&0xff;body[5]=(payload.length>>8)&0xff;
+  body[6]=seq&0xff;body[7]=(seq>>8)&0xff;
+  body.set(payload,8);
+  const crc=crc16(body);
+  const frame=new Uint8Array(body.length+2);
+  frame.set(body,0);frame[frame.length-2]=crc&0xff;frame[frame.length-1]=(crc>>8)&0xff;
+  return frame;
+}
+function opName(op){const c=CMDS.find(x=>x.op===op);return c?c.name:'0x'+op.toString(16).padStart(2,'0').toUpperCase();}
+function opHex(op){return '0x'+op.toString(16).padStart(2,'0').toUpperCase();}
+const PALETTE=['#dce3fb','#fdeecf','#d3efde','#fbd8d8','#d8f0e3','#e5def8'];
+function byteDiagram(segs){
+  return `<div class="bmap">`+segs.map((s,i)=>`<div class="bgrp" style="--c:${PALETTE[i%PALETTE.length]}"><div class="brow">${s.bytes.map(b=>`<span class="cell">${b.toString(16).padStart(2,'0').toUpperCase()}</span>`).join('')}</div><div class="blbl">${esc(s.label)}</div></div>`).join('')+`</div>`;
+}
+function buildFrameParts(op,fields,v,seq){
+  const pay=buildPayload(fields,v);
+  const segs=[
+    {label:'SOF\n0xCB',bytes:[0xCB]},
+    {label:'TYPE\nCMD',bytes:[0x01]},
+    {label:`OP\n${opHex(op)}`,bytes:[op]},
+    {label:'FLAGS',bytes:[0]},
+    {label:`LEN\n${pay.bytes.length}`,bytes:[pay.bytes.length&0xff,(pay.bytes.length>>8)&0xff]},
+    {label:`SEQ\n${seq}`,bytes:[seq&0xff,(seq>>8)&0xff]},
+    ...pay.segments,
+  ];
+  const frame=buildFrame(0x01,op,pay.bytes,seq);
+  segs.push({label:'CRC16',bytes:[frame[frame.length-2],frame[frame.length-1]]});
+  return {segs,frame,pay};
+}
+function preview(idx){
+  const c=CMDS[idx];
+  if(!c)return;
+  const {segs}=buildFrameParts(c.op,c.fields,{__idx:idx},seqNum&0xffff);
+  const el=$('prev_'+idx);if(el)el.innerHTML=byteDiagram(segs);
+}
+
+/* ---------------- 响应解码 ---------------- */
+const dv=(p,o=0)=>new DataView(p.buffer,p.byteOffset+o,p.byteLength-o);
+function decodeResp(op,p){
+  try{
+    switch(op){
+      case 0x00:return `magic=0x${p[0].toString(16)} fw=${p[1]}.${p[2]}.${p[3]}`;
+      case 0x01:{let o=0,s='';while(o<p.length){const tl=p[o++],tag=new TextDecoder().decode(p.slice(o,o+tl));o+=tl;if(p.length<=o)break;const vl=p[o++],val=new TextDecoder().decode(p.slice(o,o+vl));o+=vl;s+=`${tag}=${val} `;}return s.trim();}
+      case 0x0C:case 0x0D:return `local=${dv(p).getBigUint64(0,true)} offset=${dv(p).getBigInt64(8,true)} synced=${dv(p).getBigUint64(16,true)}`;
+      case 0x12:return `IO${p[0]+1} ${p[1]?'HIGH':'LOW'}`;
+      case 0x13:{const bits=p[0];return CH_IO.map((n,i)=>`${n} ${(bits>>i)&1?'HIGH':'LOW'}`).join(' ');}
+      case 0x26:return `PWM${p[0]+1} ${dv(p,1).getUint32(0,true)}Hz duty=${dv(p,5).getUint16(0,true)} running=${p[7]} inv=${p[8]}`;
+      case 0x35:return `rx=${dv(p,1).getUint16(0,true)} tx=${dv(p,3).getUint16(0,true)} errs=${dv(p,5).getUint32(0,true)}`;
+      case 0x32:return `USART${p[0]+1} len=${dv(p,1).getUint16(0,true)} HEX:${hexBytes(p.slice(3))}`;
+      case 0x51:return `len=${dv(p).getUint16(0,true)} RX HEX:${hexBytes(p.slice(2))}`;
+      case 0x60:return `ADC${p[0]} raw=${dv(p,1).getUint16(0,true)} mv=${dv(p,3).getUint16(0,true)}`;
+      case 0x61:return [0,1,2].map(i=>`ADC${i} raw=${dv(p,i*4).getUint16(0,true)} mv=${dv(p,i*4+2).getUint16(0,true)}`).join(' ');
+      case 0x64:return `${dv(p).getInt32(0,true)/1000} °C`;
+      case 0x41:return p.length>1?`${p[0]} 个: `+Array.from(p.slice(1)).map(a=>'0x'+a.toString(16).padStart(2,'0').toUpperCase()).join(' '):'空总线';
+      case 0x71:{let o=0,names=[];const n=p[0]||0;o=1;for(let k=0;k<n&&o<p.length;k++){const l=p[o++];names.push(new TextDecoder().decode(p.slice(o,o+l)));o+=l;}return names.join(' ');}
+      case 0x72:return new TextDecoder().decode(p.slice(2));
+      case 0x75:return `state=${p[0]} name=${p[2]?new TextDecoder().decode(p.slice(3,3+p[2])):''} remaining=${dv(p,3+p[2]).getUint32(0,true)} step=${dv(p,7+p[2]).getUint32(0,true)}`;
+      default:return p.length?`payload ${p.length}B: ${hexBytes(p)}`:'(空)';
+    }
+  }catch(e){return `解析异常: ${e.message} | HEX:${hexBytes(p)}`;}
+}
+function decodeEvt(op,p){
+  switch(op){
+    case 0x16:return `GPIO IO${p[0]+1} ${p[1]?'HIGH':'LOW'}`;
+    case 0x34:return `UART_RX USART${p[0]+1} HEX:${hexBytes(p.slice(3))}`;
+    case 0x37:return `UART_OVERRUN USART${p[0]+1} dropped=${dv(p,1).getUint32(0,true)}`;
+    case 0x2B:return `PWM_TICK count=${dv(p).getUint32(0,true)}`;
+    case 0x65:return `ADC_THRESH ADC${p[0]} ${p[1]?'ABOVE':'BELOW'} ${dv(p,2).getUint16(0,true)}mV`;
+    case 0x77:return `SEQ_DONE ${new TextDecoder().decode(p.slice(1))}`;
+    default:return `EVT ${opName(op)} ${p.length?hexBytes(p):'(空)'}`;
+  }
+}
+
+/* ---------------- 渲染 ---------------- */
+function renderParam(idx,i,f){
+  const id='p_'+idx+'_'+i;
+  const H=` oninput="preview(${idx})" onchange="preview(${idx})"`;
+  if(f.type==='ch'){
+    return `<label>${f.label}</label><select id="${id}"${H}>${chArr(f.ch).map((n,j)=>`<option value="${j}">${n}</option>`).join('')}</select>`;
+  }
+  if(f.opts){
+    return `<label>${f.label}</label><select id="${id}"${H}>${f.opts.map(o=>`<option value="${o[1]}"${o[1]===f.def?' selected':''}>${o[0]}</option>`).join('')}</select>`;
+  }
+  if(/^(u8|u16|u32|u64)$/.test(f.type)){
+    return `<label>${f.label}</label><input type="number" id="${id}" value="${f.def??''}" min="${f.min??''}" max="${f.max??''}"${H}>`;
+  }
+  if(f.type==='i16'){
+    return `<label>${f.label}</label><input type="number" id="${id}" value="${f.def??''}"${H}>`;
+  }
+  return `<label>${f.label}</label><input type="text" id="${id}" value="${f.def||''}" placeholder="${f.ph||''}"${f.wide?' style="min-width:200px"':''}${H}>`;
+}
+function render(){
+  const cats=[];const nav=[];
+  CMDS.forEach(c=>{if(!cats.includes(c.cat))cats.push(c.cat);});
+  cats.forEach(c=>nav.push(`<a href="#cat-${c.cat}">${c.cat}</a>`));
+  $('nav').innerHTML=nav.join('');
+  let html='';
+  cats.forEach(cat=>{
+    html+=`<div class="cat" id="cat-${cat}">${cat}<span class="n">${CMDS.filter(c=>c.cat===cat).length} 条</span></div><div class="cmdgrid">`;
+    CMDS.forEach((c,i)=>{
+      if(c.cat!==cat)return;
+      const params=c.fields.map((f,j)=>renderParam(i,j,f)).join('');
+      html+=`<div class="cmd">
+        <div class="cmd-head"><span class="cmd-name">${c.name}</span><span class="cmd-op">0x${c.op.toString(16).padStart(2,'0').toUpperCase()}</span><span class="cmd-syn">${c.syn}</span></div>
+        <div class="cmd-desc">${c.desc}<br><span style="color:var(--primary)">响应:</span> ${c.resp}</div>
+        <div class="cmd-params">${params}</div>
+        <div class="pv-title">🧾 发送帧预览(修改参数实时更新)</div>
+        <div id="prev_${i}"></div>
+        <div class="cmd-actions"><button class="btn mint sm" onclick="sendCmd(${i})">发送</button></div>
+        <div class="cmd-out" id="out_${i}"></div>
+      </div>`;
+    });
+    html+='</div>';
+  });
+  $('cats').innerHTML=html;
+  CMDS.forEach((c,i)=>preview(i));
+}
+let lastFrame={};
+function showOut(idx,frame,decoded,err){
+  lastFrame[idx]=frame;
+  const el=$('out_'+idx);el.style.display='block';el.className='cmd-out';
+  el.innerHTML=`<div class="sent"><code>${esc(decoded)}</code><button class="btn" onclick="copyFrame(${idx})">📋 复制帧</button></div><div class="resp${err?' err':''}">${esc(hexBytes(frame))}</div>`;
+}
+async function copyFrame(idx){
+  const f=lastFrame[idx];
+  if(!f)return;
+  try{await navigator.clipboard.writeText(hexBytes(f));toast('已复制帧: '+hexBytes(f),'success');}
+  catch(e){toast('复制失败(需 HTTPS/localhost)','error');}
+}
+
+/* ---------------- 串口(文本→二进制) ---------------- */
+let port=null,reader=null,writer=null,conn=false,binMode=false;
+let textBuf='',binBuf=[],pending=null,seqNum=0,binAckResolve=null;
+function requireConn(){if(!conn){toast('请先连接板卡','error');return false;}return true;}
+function addLog(cls,txt){
+  const log=$('evtLog'),d=document.createElement('div');d.className=cls;d.textContent=txt;
+  log.appendChild(d);while(log.children.length>200)log.firstChild.remove();log.scrollTop=log.scrollHeight;
+}
+async function connect(){
+  try{
+    if(!('serial' in navigator)){toast('需 Chrome/Edge 并通过 localhost/HTTPS 打开','error');return;}
+    port=await navigator.serial.requestPort();
+    await port.open({baudRate:115200});
+    conn=true;writer=port.writable.getWriter();reader=port.readable.getReader();
+    $('statusDot').className='dot orange';$('statusTxt').textContent='进入二进制…';$('btnDisc').disabled=false;
+    readLoop();
+    // 发送文本 BIN ENTER 进入二进制模式
+    textBuf='';binAckResolve=null;
+    const ack=new Promise(r=>{binAckResolve=r;});
+    writer.write(new TextEncoder().encode('BIN ENTER\n')).catch(e=>{});
+    const ok=await Promise.race([ack.then(()=>true),new Promise(r=>setTimeout(()=>r(false),2500))]);
+    binMode=true;
+    if(!ok)toast('未收到 OK BIN(板卡可能已在二进制模式,或连错设备)','error');
+    $('statusDot').className='dot green';$('statusTxt').textContent='已连接 · 二进制';$('btnText').disabled=false;
+    toast('已连接并进入二进制模式','success');
+  }catch(e){toast('连接失败: '+e.message,'error');}
+}
+async function disconnect(){
+  conn=false;binMode=false;
+  if(pending){clearTimeout(pending.timer);pending=null;}
+  try{if(reader){await reader.cancel();reader.releaseLock();}if(writer)writer.releaseLock();if(port)await port.close();}catch(e){}
+  reader=null;writer=null;port=null;textBuf='';binBuf=[];
+  $('statusDot').className='dot gray';$('statusTxt').textContent='未连接';$('btnDisc').disabled=true;$('btnText').disabled=true;
+}
+async function readLoop(){
+  const dec=new TextDecoder();
+  try{
+    while(conn&&reader){
+      const {value,done}=await reader.read();if(done)break;
+      if(binMode){
+        for(const b of value)binBuf.push(b);
+        parseFrames();
+      }else{
+        textBuf+=dec.decode(value,{stream:true});
+        let i;
+        while((i=textBuf.indexOf('\n'))>=0){
+          const line=textBuf.slice(0,i).replace(/\r$/,'');textBuf=textBuf.slice(i+1);
+          if(line.trim())handleTextLine(line.trim());
+        }
+      }
+    }
+  }catch(e){}
+}
+function handleTextLine(line){
+  if(binAckResolve&&line.startsWith('OK BIN')){binAckResolve();binAckResolve=null;return;}
+  addLog(line.startsWith('OK ')?'resp':'err',line);
+}
+function parseFrames(){
+  while(true){
+    let i=binBuf.indexOf(0xCB);
+    if(i<0){binBuf=[];return;}
+    if(i>0)binBuf=binBuf.slice(i);
+    if(binBuf.length<8)return;
+    const len=binBuf[4]|(binBuf[5]<<8);
+    const need=8+len+2;
+    if(binBuf.length<need)return;
+    const frame=binBuf.slice(0,need);binBuf=binBuf.slice(need);
+    dispatchFrame(frame[1],frame[2],frame[6]|(frame[7]<<8),Uint8Array.from(frame.slice(8,8+len)));
+  }
+}
+function dispatchFrame(type,op,seq,payload){
+  const name=opName(op);
+  if(type===0x02||type===0x03){
+    if(pending&&pending.seq===seq){
+      clearTimeout(pending.timer);const p=pending;pending=null;
+      p.resolve({type,op,payload});
+    }else addLog(type===0x02?'resp':'err',`${name}: ${decodeResp(op,payload)}`);
+    return;
+  }
+  if(type===0x04)addLog('evt',decodeEvt(op,payload));
+  else if(type===0x05||type===0x06)addLog('data',`${name} ${type===0x06?'END ':''}${payload.length?hexBytes(payload):''}`);
+}
+function sendBin(op,payload){
+  return new Promise((resolve,reject)=>{
+    if(!conn)return reject(new Error('未连接'));
+    const seq=(seqNum++)&0xFFFF;
+    if(pending)pending.reject(new Error('busy'));
+    pending={seq,resolve,reject,timer:setTimeout(()=>{pending=null;reject(new Error('超时'));},4000)};
+    const frame=buildFrame(0x01,op,payload,seq);
+    addLog('tx',`> ${opName(op)} ${hexBytes(payload)}`);
+    writer.write(frame).catch(e=>{pending=null;reject(e);});
+  });
+}
+async function sendCmd(idx){
+  const c=CMDS[idx];
+  if(!requireConn())return;
+  try{
+    const v={__idx:idx};
+    const {pay}=buildFrameParts(c.op,c.fields,v,seqNum&0xffff);
+    const r=await sendBin(c.op,pay.bytes);
+    const usedSeq=(seqNum-1)&0xffff;
+    const {segs,frame}=buildFrameParts(c.op,c.fields,v,usedSeq);
+    const el=$('prev_'+idx);if(el)el.innerHTML=byteDiagram(segs);
+    showOut(idx,frame,`${c.name} → ${r.type===0x03?'ERR ':''}${decodeResp(r.op,r.payload)}`,r.type===0x03);
+  }catch(e){showOut(idx,Uint8Array.from([0]),`发送失败: ${e.message}`,true);}
+}
+async function exitToText(){
+  if(!requireConn())return;
+  try{
+    const r=await sendBin(0x0F,new Uint8Array(0));
+    binMode=false;textBuf='';
+    $('statusDot').className='dot gray';$('statusTxt').textContent='已退出到文本模式';$('btnText').disabled=true;
+    addLog('resp',`MODE_EXIT → ${decodeResp(r.op,r.payload)}`);
+    toast('已退出二进制模式(板卡回文本模式)','info');
+  }catch(e){toast('MODE_EXIT 失败: '+e.message,'error');}
+}
+render();
+</script>
+</body>
+</html>
