@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MPU6050 · I2C 实时曲线</title>
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--ink:#1e293b;--muted:#64748b;--line:#e6eaf2;
+  --primary:#5b6ee1;--primary-soft:#eef1fd;--mint:#10b981;--coral:#ef5b5b;--sky:#3aa0ff;--peach:#f59e0b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:
+  radial-gradient(1200px 500px at 10% -10%,#eef1fd,transparent 50%),var(--bg);color:var(--ink);font-size:14px}
+.wrap{max-width:1080px;margin:0 auto;padding:22px 18px 60px}
+header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.logo{width:44px;height:44px;border-radius:13px;background:linear-gradient(135deg,#5b6ee1,#8b7cf6);
+  display:grid;place-items:center;color:#fff;font-size:20px}
+.brand h1{font-size:19px}.brand p{color:var(--muted);font-size:12.5px}
+.conn{margin-left:auto;display:flex;align-items:center;gap:10px}
+.btn{font:inherit;border:none;border-radius:10px;padding:8px 14px;cursor:pointer;font-weight:600;transition:.15s}
+.btn.primary{background:var(--primary);color:#fff}.btn.primary:hover{background:#4a5bd0}
+.btn.mint{background:var(--mint);color:#fff}.btn.ghost{background:#fff;border:1.5px solid var(--line)}
+.btn.coral{background:var(--coral);color:#fff}.btn.sm{padding:5px 10px;font-size:12.5px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px}
+.dot.gray{background:#cbd5e1}.dot.green{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18)}
+select,input[type=number]{font:inherit;border:1.5px solid var(--line);border-radius:9px;padding:7px 9px;outline:none}
+select:focus,input:focus{border-color:var(--primary)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 4px 18px rgba(30,41,59,.05);margin-bottom:14px}
+.card h3{font-size:14px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.ctl{display:flex;align-items:center;gap:8px;margin:8px 0;flex-wrap:wrap}
+.ctl label{color:var(--muted);font-size:12.5px;min-width:64px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.result{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;margin-top:8px}
+.chart-box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px;margin-top:10px}
+canvas{width:100%;height:auto;display:block;border-radius:8px;background:#fbfcfe}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);padding:5px 4px 0;flex-wrap:wrap}
+.lv{display:inline-flex;align-items:center;gap:5px}
+.chip{padding:4px 10px;border-radius:999px;background:var(--primary-soft);color:var(--primary);font-weight:600;font-size:12px;cursor:pointer}
+.chip.off{opacity:.35}
+.toasts{position:fixed;top:16px;right:16px;z-index:99;display:flex;flex-direction:column;gap:8px}
+.toast{background:#fff;border-radius:12px;padding:10px 14px;box-shadow:0 8px 24px rgba(30,41,59,.16);border-left:4px solid var(--primary);animation:slide .25s}
+.toast.success{border-left-color:var(--mint)}.toast.error{border-left-color:var(--coral)}
+@keyframes slide{from{opacity:0;transform:translateX(16px)}}
+.badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--sky);color:#fff}
+.live{font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="toasts" id="toasts"></div>
+<div class="wrap">
+  <header>
+    <div class="logo">🧭</div>
+    <div class="brand">
+      <h1>MPU6050 · I2C 实时曲线</h1>
+      <p>通过 IO Dock 的 I2C 读取 MPU6050(6轴 IMU),纯 Web Serial + 文本协议,不改固件 <span class="badge">v3</span></p>
+    </div>
+    <div class="conn">
+      <button class="btn primary" onclick="connect()">🔌 连接</button>
+      <button class="btn ghost" onclick="disconnect()" id="btnDisc" disabled>断开</button>
+      <span><span class="dot gray" id="statusDot"></span><span id="statusTxt">未连接</span></span>
+    </div>
+  </header>
+
+  <div class="card">
+    <h3>🔍 设备检测与配置</h3>
+    <div class="row">
+      <button class="btn primary sm" onclick="scan()">I2C 扫描</button>
+      <button class="btn ghost sm" onclick="config()">唤醒/配置 MPU6050</button>
+      <button class="btn ghost sm" onclick="readOnce()">读取一次</button>
+      <span class="badge" id="devAddr">地址:?</span>
+      <span class="result live" id="whoami" style="margin-top:0">WHO_AM_I: -</span>
+    </div>
+    <div class="ctl">
+      <label>量程</label>
+      <select id="accelRange">
+        <option value="0">加速度 ±2g</option>
+        <option value="1">±4g</option>
+        <option value="2">±8g</option>
+        <option value="3">±16g</option>
+      </select>
+      <select id="gyroRange">
+        <option value="0">陀螺 ±250°/s</option>
+        <option value="1">±500°/s</option>
+        <option value="2">±1000°/s</option>
+        <option value="3">±2000°/s</option>
+      </select>
+      <label>采样周期</label>
+      <input type="number" id="interval" value="20" min="5" max="1000" style="width:70px">
+      <span style="color:var(--muted)">ms</span>
+      <button class="btn mint" id="sampleBtn" onclick="toggleSample()">▶ 开始采样</button>
+    </div>
+    <div class="row" id="liveVals" style="font-size:12.5px;color:var(--muted)">等待数据…</div>
+  </div>
+
+  <div class="card">
+    <h3>📊 加速度计 <span class="badge" id="accelUnit">g</span></h3>
+    <div class="chart-box"><canvas id="chartAccel" width="1100" height="180"></canvas>
+      <div class="legend" id="legendAccel"></div></div>
+  </div>
+  <div class="card">
+    <h3>🌀 陀螺仪 <span class="badge" id="gyroUnit">°/s</span></h3>
+    <div class="chart-box"><canvas id="chartGyro" width="1100" height="180"></canvas>
+      <div class="legend" id="legendGyro"></div></div>
+  </div>
+  <div class="card">
+    <h3>🌡️ 温度</h3>
+    <div class="chart-box"><canvas id="chartTemp" width="1100" height="140"></canvas>
+      <div class="legend" id="legendTemp"></div></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+function toast(m,t='info'){
+  const el=document.createElement('div');el.className='toast '+t;el.textContent=m;
+  $('toasts').appendChild(el);setTimeout(()=>{el.style.opacity=0;el.style.transition='.3s';setTimeout(()=>el.remove(),300)},2800);
+}
+
+/* ---------- serial + protocol ---------- */
+let port=null,reader=null,writer=null,conn=false,rxBuf='',pending=null;
+function requireConn(){ if(!conn){toast('请先连接板卡','error');return false;} return true; }
+async function connect(){
+  try{
+    if(!('serial' in navigator)){toast('需 Chrome/Edge 并通过 localhost/HTTPS 打开','error');return;}
+    port=await navigator.serial.requestPort();
+    await port.open({baudRate:115200});
+    conn=true;writer=port.writable.getWriter();reader=port.readable.getReader();
+    $('statusDot').className='dot green';$('statusTxt').textContent='已连接';$('btnDisc').disabled=false;
+    toast('连接成功','success');readLoop();
+    await sendCommand('PING');scan();
+  }catch(e){toast('连接失败: '+e.message,'error');}
+}
+async function disconnect(){
+  conn=false;
+  if(pending){clearTimeout(pending.timer);pending=null;}
+  try{if(reader){await reader.cancel();reader.releaseLock();}if(writer)writer.releaseLock();if(port)await port.close();}catch(e){}
+  reader=null;writer=null;port=null;
+  $('statusDot').className='dot gray';$('statusTxt').textContent='未连接';$('btnDisc').disabled=true;
+  stopSample();toast('已断开','info');
+}
+async function readLoop(){
+  const dec=new TextDecoder();
+  try{
+    while(conn&&reader){
+      const {value,done}=await reader.read();if(done)break;
+      rxBuf+=dec.decode(value,{stream:true});
+      let i;
+      while((i=rxBuf.indexOf('\n'))>=0){
+        const line=rxBuf.slice(0,i).replace(/\r$/,'');rxBuf=rxBuf.slice(i+1);
+        if(line.trim())handleLine(line.trim());
+      }
+    }
+  }catch(e){}
+}
+function handleLine(line){
+  if(line.startsWith('EVT ')||line.startsWith('DATA '))return;
+  if(pending){
+    pending.lines.push(line);
+    if((line.startsWith('OK ')||line.startsWith('ERR '))&&!pending.multiline){finishPending();return;}
+    if(pending.multiline&&line==='END'){finishPending();return;}
+  }
+}
+function finishPending(){clearTimeout(pending.timer);const p=pending;pending=null;p.resolve(p.lines);}
+function sendCommand(line,{multiline=false,timeout=4000}={}){
+  return new Promise((resolve,reject)=>{
+    if(pending)pending.reject(new Error('busy'));
+    pending={multiline,lines:[],resolve,reject,timer:setTimeout(()=>{pending=null;reject(new Error('超时: '+line));},timeout)};
+    writer.write(new TextEncoder().encode(line+'\n')).catch(e=>{pending=null;reject(e);});
+  });
+}
+function errCode(l){const m=l.match(/ERR\s+\S+\s+(\S+)/);return m?m[1]:'';}
+
+/* ---------- I2C helpers ---------- */
+async function iicRead(addr,reg,n){
+  const r=await sendCommand(`I2C READ 0x${addr.toString(16)} 0x${reg.toString(16)} ${n}`);
+  if(!r[0].startsWith('OK'))throw new Error(errCode(r[0])||'I2C 读失败');
+  const hex=r[0].split('HEX:')[1]||'';
+  const out=[];
+  for(let i=0;i+1<hex.length;i+=2)out.push(parseInt(hex.slice(i,i+2),16));
+  return out;
+}
+async function iicWrite(addr,reg,...data){
+  const hex=data.map(b=>b.toString(16).padStart(2,'0')).join(' ');
+  const r=await sendCommand(`I2C WRITE 0x${addr.toString(16)} 0x${reg.toString(16)} ${hex}`);
+  return r[0].startsWith('OK');
+}
+
+const ADDR=0x68;
+let accelScale=16384, gyroScale=131;
+
+/* ---------- MPU6050 ---------- */
+async function scan(){
+  if(!requireConn())return;
+  const r=await sendCommand('I2C SCAN',{multiline:true});
+  const found=(r[1]||'').toLowerCase().includes('0x68');
+  $('devAddr').textContent=found?'地址: 0x68':'未找到 0x68';
+  $('devAddr').style.background=found?'':'var(--coral)';
+  if(found)toast('MPU6050 已找到(0x68)','success');
+  else toast('未在 0x68 找到设备,请检查接线','error');
+}
+async function config(){
+  if(!requireConn())return;
+  try{
+    await iicWrite(ADDR,0x6B,0x00);   // 唤醒,内部 8MHz
+    await iicWrite(ADDR,0x1A,0x03);   // DLPF 44Hz
+    const ar=+$('accelRange').value, gr=+$('gyroRange').value;
+    await iicWrite(ADDR,0x1C,ar<<3);  // 加速度计量程
+    await iicWrite(ADDR,0x1B,gr<<3);  // 陀螺仪量程
+    accelScale=[16384,8192,4096,2048][ar];
+    gyroScale=[131,65.5,32.8,16.4][gr];
+    $('accelUnit').textContent=['±2g','±4g','±8g','±16g'][ar];
+    $('gyroUnit').textContent=['±250°/s','±500°/s','±1000°/s','±2000°/s'][gr];
+    const w=await iicRead(ADDR,0x75,1); // WHO_AM_I
+    const who=(w[0]||0);
+    $('whoami').textContent='WHO_AM_I: 0x'+who.toString(16).padStart(2,'0')+((who===0x68||who===0x70)?' ✓':'');
+    toast('MPU6050 配置完成','success');
+  }catch(e){toast('配置失败: '+e.message,'error');}
+}
+function parse(raw){
+  const r=o=>{const v=(raw[o]<<8)|raw[o+1];return v>=0x8000?v-0x10000:v;};
+  return {ax:r(0)/accelScale, ay:r(2)/accelScale, az:r(4)/accelScale,
+          temp:36.53+r(6)/340.0,
+          gx:r(8)/gyroScale, gy:r(10)/gyroScale, gz:r(12)/gyroScale};
+}
+
+/* ---------- sampling ---------- */
+let sampling=false,timer=null;
+const hist={ax:[],ay:[],az:[],gx:[],gy:[],gz:[],temp:[]};
+const MAXP=250;
+async function readOnce(){
+  if(!requireConn())return;
+  try{
+    const raw=await iicRead(ADDR,0x3B,14);
+    if(raw.length<14){toast('读取数据不足','error');return;}
+    onData(parse(raw));
+  }catch(e){toast('读取失败: '+e.message,'error');}
+}
+function toggleSample(){
+  if(!requireConn())return;
+  if(sampling){stopSample();return;}
+  sampling=true;$('sampleBtn').textContent='⏹ 停止采样';$('sampleBtn').style.background='var(--coral)';
+  tick();
+  timer=setInterval(tick,Math.max(5,+$('interval').value||20));
+  toast('开始采样','success');
+}
+function stopSample(){sampling=false;if(timer){clearInterval(timer);timer=null;}$('sampleBtn').textContent='▶ 开始采样';$('sampleBtn').style.background='var(--mint)';}
+async function tick(){
+  if(!sampling)return;
+  try{
+    const raw=await iicRead(ADDR,0x3B,14);
+    if(raw.length>=14)onData(parse(raw));
+  }catch(e){/* skip a frame */}
+}
+function onData(d){
+  for(const k in hist){hist[k].push(d[k]);if(hist[k].length>MAXP)hist[k].shift();}
+  drawAll(d);
+  $('liveVals').textContent=
+    `ax ${d.ax.toFixed(3)}  ay ${d.ay.toFixed(3)}  az ${d.az.toFixed(3)} g | `+
+    `gx ${d.gx.toFixed(1)}  gy ${d.gy.toFixed(1)}  gz ${d.gz.toFixed(1)} °/s | `+
+    `temp ${d.temp.toFixed(2)}°C`;
+}
+
+/* ---------- charts ---------- */
+const COLORS={ax:'#ff1a1a',ay:'#00c853',az:'#2e7bff',gx:'#ff1a1a',gy:'#00c853',gz:'#2e7bff',temp:'#ff9500'};
+function drawChart(canvasId,legendId,series,unit){
+  const c=$(canvasId),ctx=c.getContext('2d'),W=c.width,H=c.height;
+  ctx.clearRect(0,0,W,H);
+  const padL=48,padR=14,padT=14,padB=22;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  const N=hist[series[0].k].length;
+  if(N<2){ctx.fillStyle='#94a3b8';ctx.font='13px sans-serif';ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText('等待数据…',padL+20,H/2);return;}
+  // auto-scale with stable padding
+  let mn=1e9,mx=-1e9;
+  series.forEach(s=>{const a=hist[s.k];mn=Math.min(mn,...a);mx=Math.max(mx,...a);});
+  let span=mx-mn; if(span<1e-6){mx+=0.5;mn-=0.5;span=1;}
+  const pd=span*0.12; mn-=pd; mx+=pd; span=mx-mn;
+  const yOf=v=>padT+plotH*((mx-v)/span);
+  // unit label
+  ctx.font='600 11px sans-serif'; ctx.textAlign='right'; ctx.textBaseline='top';
+  ctx.fillStyle='#94a3b8'; ctx.fillText(unit, W-padR, 2);
+  // y ticks (5)
+  ctx.font='11px sans-serif'; ctx.textAlign='right'; ctx.textBaseline='middle';
+  for(let i=0;i<=4;i++){
+    const v=mx-(span*i/4), y=yOf(v);
+    ctx.strokeStyle='#eef1f6'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(W-padR,y); ctx.stroke();
+    ctx.fillStyle='#94a3b8'; ctx.fillText(v.toFixed(2), padL-6, y);
+  }
+  // vertical time grid
+  ctx.strokeStyle='#f3f5fa';
+  for(let i=1;i<4;i++){const x=padL+plotW*i/4;ctx.beginPath();ctx.moveTo(x,padT);ctx.lineTo(x,padT+plotH);ctx.stroke();}
+  // zero baseline (dashed) if in range
+  if(mn<0&&mx>0){
+    const y=yOf(0);
+    ctx.strokeStyle='#d8dee9'; ctx.setLineDash([5,4]); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(W-padR,y); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  // series lines
+  series.forEach(s=>{
+    const a=hist[s.k];
+    ctx.strokeStyle=COLORS[s.k]; ctx.lineWidth=3; ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.beginPath();
+    for(let i=0;i<N;i++){
+      const x=padL+(i/(MAXP-1))*plotW, y=yOf(a[i]);
+      i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+    }
+    ctx.stroke();
+    // latest-point dot
+    const lx=padL+((N-1)/(MAXP-1))*plotW, ly=yOf(a[N-1]);
+    ctx.fillStyle='#fff';
+    ctx.beginPath(); ctx.arc(lx,ly,4,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle=COLORS[s.k]; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(lx,ly,4,0,Math.PI*2); ctx.stroke();
+  });
+  // legend with latest values
+  $(legendId).innerHTML=series.map(s=>{
+    const a=hist[s.k], v=a[a.length-1];
+    return `<span class="lv"><span style="width:16px;height:4px;background:${COLORS[s.k]};display:inline-block;border-radius:2px"></span><b>${s.name}</b> ${v.toFixed(2)}</span>`;
+  }).join('');
+}
+function drawAll(d){
+  drawChart('chartAccel','legendAccel',[{k:'ax',name:'X'},{k:'ay',name:'Y'},{k:'az',name:'Z'}],'g');
+  drawChart('chartGyro','legendGyro',[{k:'gx',name:'X'},{k:'gy',name:'Y'},{k:'gz',name:'Z'}],'°/s');
+  drawChart('chartTemp','legendTemp',[{k:'temp',name:'温度'}],'°C');
+}
+</script>
+</body>
+</html>

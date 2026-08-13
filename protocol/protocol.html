@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IO Dock · 协议手册(文本模式)</title>
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--ink:#1e293b;--muted:#64748b;--line:#e6eaf2;
+  --primary:#5b6ee1;--mint:#10b981;--coral:#ef5b5b;--sky:#3aa0ff;--peach:#f59e0b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:
+  radial-gradient(1200px 500px at 10% -10%,#eef1fd,transparent 50%),var(--bg);color:var(--ink);font-size:14px}
+.wrap{max-width:1120px;margin:0 auto;padding:22px 18px 60px}
+header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+.logo{width:44px;height:44px;border-radius:13px;background:linear-gradient(135deg,#5b6ee1,#3aa0ff);
+  display:grid;place-items:center;color:#fff;font-size:20px}
+.brand h1{font-size:19px}.brand p{color:var(--muted);font-size:12.5px}
+.conn{margin-left:auto;display:flex;align-items:center;gap:10px}
+.btn{font:inherit;border:none;border-radius:10px;padding:8px 14px;cursor:pointer;font-weight:600;transition:.15s}
+.btn.primary{background:var(--primary);color:#fff}.btn.mint{background:var(--mint);color:#fff}
+.btn.ghost{background:#fff;border:1.5px solid var(--line)}
+.btn.sm{padding:5px 10px;font-size:12.5px}.btn:disabled{opacity:.45;cursor:not-allowed}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px}
+.dot.gray{background:#cbd5e1}.dot.green{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 4px 18px rgba(30,41,59,.05);margin-bottom:14px}
+.cat{font-size:15px;font-weight:700;margin:22px 2px 10px;display:flex;align-items:center;gap:8px}
+.cat .n{color:var(--muted);font-weight:600;font-size:12px}
+.cmdgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}
+.cmd{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:#fff;box-shadow:0 2px 8px rgba(30,41,59,.04)}
+.cmd-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cmd-name{font-weight:700;font-family:ui-monospace,Consolas,monospace;font-size:13.5px;color:var(--primary)}
+.cmd-syn{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--muted);word-break:break-all}
+.cmd-desc{color:var(--muted);font-size:12px;margin:6px 0 8px;line-height:1.5}
+.cmd-params{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.cmd-params label{font-size:11px;color:var(--muted)}
+select,input[type=number],input[type=text]{font:inherit;border:1.5px solid var(--line);border-radius:8px;padding:5px 7px;outline:none;font-size:12.5px}
+select:focus,input:focus{border-color:var(--primary)}
+.cmd-actions{margin-top:8px;display:flex;gap:8px;align-items:center}
+.cmd-out{display:none;margin-top:8px;background:#0f172a;color:#a5f3fc;border-radius:8px;padding:8px 10px;
+  font-family:ui-monospace,Consolas,monospace;font-size:12px;line-height:1.6}
+.cmd-out .sent{display:flex;align-items:center;gap:8px;justify-content:space-between;color:#c7d2fe;
+  border-bottom:1px dashed rgba(255,255,255,.15);padding-bottom:6px;margin-bottom:6px}
+.cmd-out .sent code{font-family:ui-monospace,Consolas,monospace;font-size:12px;word-break:break-all}
+.cmd-out .sent .btn{background:rgba(255,255,255,.12);color:#e2e8f0;border:none;font-size:11px;padding:3px 9px;border-radius:7px;white-space:nowrap}
+.cmd-out .sent .btn:hover{background:rgba(255,255,255,.25)}
+.cmd-out .resp{white-space:pre-wrap;word-break:break-all}
+.cmd-out .resp.err{color:#fda4af}
+.notice{background:#eef1fd;border:1px solid #d6dcf5;border-radius:12px;padding:10px 14px;color:#3a4a8f;font-size:12.5px;margin-bottom:8px;line-height:1.6}
+.nav{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.nav a{text-decoration:none;font-size:12px;font-weight:600;padding:4px 12px;border-radius:999px;background:#fff;border:1.5px solid var(--line);color:var(--muted)}
+.nav a:hover{border-color:var(--primary);color:var(--primary)}
+.log{background:#fbfcfe;border:1px solid var(--line);border-radius:10px;padding:10px;height:220px;overflow-y:auto;
+  font-family:ui-monospace,Consolas,monospace;font-size:12px;margin-top:8px}
+.log div{padding:1px 3px}
+.log .tx{color:#5b6ee1}.log .ok{color:#16a34a}.log .err{color:#dc2626}.log .evt{color:#f59e0b}.log .data{color:#3aa0ff}
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl td,.tbl th{border:1px solid var(--line);padding:5px 9px;text-align:left;vertical-align:top}
+.tbl th{background:var(--bg);font-weight:600}
+code,.mono{font-family:ui-monospace,Consolas,monospace}
+.toasts{position:fixed;top:16px;right:16px;z-index:99;display:flex;flex-direction:column;gap:8px}
+.toast{background:#fff;border-radius:12px;padding:10px 14px;box-shadow:0 8px 24px rgba(30,41,59,.16);border-left:4px solid var(--primary);animation:slide .25s}
+.toast.success{border-left-color:var(--mint)}.toast.error{border-left-color:var(--coral)}
+@keyframes slide{from{opacity:0;transform:translateX(16px)}}
+</style>
+</head>
+<body>
+<div class="toasts" id="toasts"></div>
+<div class="wrap">
+  <header>
+    <div class="logo">📖</div>
+    <div class="brand">
+      <h1>IO Dock · 协议手册</h1>
+      <p>文本模式命令集 · 全部可点击修改参数并发送,实时查看响应</p>
+    </div>
+    <div class="conn">
+      <button class="btn primary" onclick="connect()">🔌 连接</button>
+      <button class="btn ghost" onclick="disconnect()" id="btnDisc" disabled>断开</button>
+      <span><span class="dot gray" id="statusDot"></span><span id="statusTxt">未连接</span></span>
+    </div>
+  </header>
+
+  <div class="notice">
+    共两套协议编码:<b>文本模式</b>(本页展示、人可读、可调试)与<b>二进制高速模式</b>(紧凑帧 + CRC,面向自动化/大流量,见
+    <code>Doc/Host_Protocol.md</code> 第 11 节)。本页操作<b>文本模式</b>:每条命令展示语法与参数,填好后点「发送」,
+    响应显示在卡片内,事件与数据流实时出现在下方「事件流」。命令名与关键字不区分大小写;行内不可含裸空格(携带任意字节用
+    <code>TXT:</code>/<code>HEX:</code>)。
+  </div>
+
+  <div class="nav" id="nav"></div>
+  <div id="cats"></div>
+
+  <div class="card">
+    <h3 style="font-size:14px;margin-bottom:4px">📡 事件流 / 数据流(板卡主动上报)</h3>
+    <div class="log" id="evtLog"><div class="evt">— 连接板卡后,此处显示 EVT 事件与 DATA 数据流 —</div></div>
+  </div>
+
+  <div class="card">
+    <h3 style="font-size:14px;margin-bottom:8px">📄 响应与事件格式</h3>
+    <table class="tbl">
+      <tr><th>格式</th><th>说明</th><th>示例</th></tr>
+      <tr><td class="mono">OK &lt;CMD&gt; &lt;payload&gt;</td><td>成功响应</td><td class="mono">OK PWM CFG PWM1 1000Hz 50%</td></tr>
+      <tr><td class="mono">ERR &lt;CMD&gt; &lt;ERRCODE&gt; &lt;msg&gt;</td><td>错误响应</td><td class="mono">ERR I2C READ E_NACK addr=0x3C</td></tr>
+      <tr><td class="mono">EVT &lt;NAME&gt; &lt;payload&gt;</td><td>异步事件(板卡主动上报)</td><td class="mono">EVT GPIO IO1 LOW</td></tr>
+      <tr><td class="mono">DATA &lt;STREAM&gt; &lt;payload&gt;<br>DATA_END &lt;STREAM&gt;</td><td>连续采样 / 数据流</td><td class="mono">DATA ADC0 2048,2050,2047</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3 style="font-size:14px;margin-bottom:8px">🚩 错误码</h3>
+    <table class="tbl">
+      <tr><th>码</th><th>含义</th></tr>
+      <tr><td class="mono">E_BADCMD</td><td>未知命令</td></tr>
+      <tr><td class="mono">E_PARAM</td><td>参数数量或格式错误</td></tr>
+      <tr><td class="mono">E_NOTFOUND</td><td>通道/对象不存在</td></tr>
+      <tr><td class="mono">E_RANGE</td><td>数值超出范围</td></tr>
+      <tr><td class="mono">E_CFG</td><td>未配置或配置冲突</td></tr>
+      <tr><td class="mono">E_BUSY</td><td>上一条异步操作仍在进行</td></tr>
+      <tr><td class="mono">E_TIMEOUT</td><td>总线操作超时(如 I2C/SPI 无应答)</td></tr>
+      <tr><td class="mono">E_NACK</td><td>I2C 从机无应答(收到 NACK)</td></tr>
+      <tr><td class="mono">E_OVERRUN</td><td>缓冲溢出 / 采样丢失</td></tr>
+      <tr><td class="mono">E_IO</td><td>硬件错误</td></tr>
+      <tr><td class="mono">E_LONG</td><td>命令行过长(&gt;512B)</td></tr>
+      <tr><td class="mono">E_DENIED</td><td>当前状态不允许该操作</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3 style="font-size:14px;margin-bottom:8px">🔔 事件列表</h3>
+    <table class="tbl">
+      <tr><th>事件</th><th>触发</th></tr>
+      <tr><td class="mono">EVT GPIO &lt;IOx&gt; &lt;HIGH|LOW&gt;</td><td>IO 输入变化(带 50ms 防抖)</td></tr>
+      <tr><td class="mono">EVT UART_RX &lt;USARTx&gt; HEX:..</td><td>UART 透传模式收到数据</td></tr>
+      <tr><td class="mono">EVT UART_OVERRUN &lt;USARTx&gt; &lt;n&gt;</td><td>UART 缓冲溢出,丢弃 n 字节</td></tr>
+      <tr><td class="mono">EVT ADC_THRESH &lt;ADCx&gt; &lt;ABOVE|BELOW&gt; &lt;mV&gt;</td><td>ADC 越过阈值</td></tr>
+      <tr><td class="mono">EVT PWM_TICK &lt;count&gt;</td><td>PWM TICK 每周期回调(如 1Hz)</td></tr>
+      <tr><td class="mono">EVT SEQ_DONE &lt;name&gt;</td><td>序列执行完成</td></tr>
+    </table>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+function toast(m,t='info'){
+  const el=document.createElement('div');el.className='toast '+t;el.textContent=m;
+  $('toasts').appendChild(el);setTimeout(()=>{el.style.opacity=0;el.style.transition='.3s';setTimeout(()=>el.remove(),300)},2600);
+}
+
+/* ---------------- 命令集定义 ---------------- */
+const CH_IO  =['IO1','IO2','IO3','IO4','IO5','IO6'];
+const CH_PWM =['PWM1','PWM2','PWM3','PWM4'];
+const CH_UART=['USART1','USART2'];
+const CH_ADC =['ADC0','ADC1','ADC2'];
+const I2C_RATE=[['100','100kHz'],['400','400kHz'],['1000','1MHz']];
+
+const CMDS=[
+ // ---------- 系统 ----------
+ {cat:'系统',name:'HELP',syn:'HELP',desc:'列出全部命令与用法',multiline:true,params:[],build:()=>'HELP'},
+ {cat:'系统',name:'INFO',syn:'INFO',desc:'板卡与固件信息(多行键值对)',multiline:true,params:[],build:()=>'INFO'},
+ {cat:'系统',name:'PING',syn:'PING',desc:'在线检查',params:[],build:()=>'PING'},
+ {cat:'系统',name:'SYNC',syn:'SYNC <host_us>',desc:'时间同步(单向):发送主机时间(微秒),从机计算偏移',params:[{label:'host_us',type:'number',ph:'微秒'}],build:v=>`SYNC ${v.p0||Date.now()*1000}`},
+ {cat:'系统',name:'TIME',syn:'TIME',desc:'查询本地/偏移/同步后时间',params:[],build:()=>'TIME'},
+ {cat:'系统',name:'RESET',syn:'RESET',desc:'软复位板卡',params:[],build:()=>'RESET'},
+ {cat:'系统',name:'BOOTLOADER',syn:'BOOTLOADER',desc:'进入 UF2 下载模式(USB 枚举为存储盘)',params:[],build:()=>'BOOTLOADER'},
+ {cat:'系统',name:'LED',syn:'LED <ON|OFF>',desc:'板载指示灯开关',params:[{label:'状态',type:'select',opts:['ON','OFF']}],build:v=>`LED ${v.p0}`},
+
+ // ---------- IO ----------
+ {cat:'IO',name:'IO CFG',syn:'IO CFG <IOx> <IN|OUT> [PULLUP|PULLDOWN|FLOAT]',desc:'配置方向与输入上下拉',params:[
+   {label:'通道',type:'ch',opts:CH_IO},{label:'方向',type:'select',opts:['OUT','IN']},
+   {label:'上拉',type:'select',opts:['FLOAT','PULLUP','PULLDOWN'],def:'FLOAT'}],
+   build:v=>`IO CFG ${v.p0} ${v.p1} ${v.p2}`},
+ {cat:'IO',name:'IO WRITE',syn:'IO WRITE <IOx> <HIGH|LOW>',desc:'输出电平(低电平点亮板载 LED)',params:[
+   {label:'通道',type:'ch',opts:CH_IO},{label:'电平',type:'select',opts:['HIGH','LOW']}],
+   build:v=>`IO WRITE ${v.p0} ${v.p1}`},
+ {cat:'IO',name:'IO READ',syn:'IO READ <IOx>',desc:'读输入电平',params:[{label:'通道',type:'ch',opts:CH_IO}],build:v=>`IO READ ${v.p0}`},
+ {cat:'IO',name:'IO READALL',syn:'IO READALL',desc:'读全部 6 路(每路一行)',multiline:true,params:[],build:()=>'IO READALL'},
+ {cat:'IO',name:'IO TOGGLE',syn:'IO TOGGLE <IOx>',desc:'翻转输出',params:[{label:'通道',type:'ch',opts:CH_IO}],build:v=>`IO TOGGLE ${v.p0}`},
+ {cat:'IO',name:'IO PULSE',syn:'IO PULSE <IOx> <HIGH|LOW> <ms>',desc:'输出指定宽度脉冲(非阻塞)',params:[
+   {label:'通道',type:'ch',opts:CH_IO},{label:'电平',type:'select',opts:['LOW','HIGH']},
+   {label:'时长ms',type:'number',def:'200',min:1}],
+   build:v=>`IO PULSE ${v.p0} ${v.p1} ${v.p2}`},
+ {cat:'IO',name:'IO EVENT',syn:'IO EVENT <IOx> <ON|OFF> [RISING|FALLING|CHANGE]',desc:'输入变化事件上报开关',params:[
+   {label:'通道',type:'ch',opts:CH_IO},{label:'开关',type:'select',opts:['ON','OFF']},
+   {label:'边沿',type:'select',opts:['CHANGE','RISING','FALLING'],def:'CHANGE'}],
+   build:v=>`IO EVENT ${v.p0} ${v.p1} ${v.p2}`},
+
+ // ---------- PWM ----------
+ {cat:'PWM',name:'PWM CFG',syn:'PWM CFG <PWMx> <freq_Hz> <duty>',desc:'配置频率与占空比并停止。duty 0~100 为百分比,#N 为 16 位原始值',params:[
+   {label:'通道',type:'ch',opts:CH_PWM},{label:'频率Hz',type:'number',def:'1000',min:1},
+   {label:'占空比',type:'text',def:'50'}],
+   build:v=>`PWM CFG ${v.p0} ${v.p1} ${v.p2}`},
+ {cat:'PWM',name:'PWM FREQ',syn:'PWM FREQ <PWMx> <freq_Hz>',desc:'修改频率(运行中生效)',params:[
+   {label:'通道',type:'ch',opts:CH_PWM},{label:'频率Hz',type:'number',def:'1000',min:1}],
+   build:v=>`PWM FREQ ${v.p0} ${v.p1}`},
+ {cat:'PWM',name:'PWM DUTY',syn:'PWM DUTY <PWMx> <duty>',desc:'修改占空比(运行中生效)',params:[
+   {label:'通道',type:'ch',opts:CH_PWM},{label:'占空比',type:'text',def:'50'}],
+   build:v=>`PWM DUTY ${v.p0} ${v.p1}`},
+ {cat:'PWM',name:'PWM START',syn:'PWM START <PWMx>',desc:'启动输出',params:[{label:'通道',type:'ch',opts:CH_PWM}],build:v=>`PWM START ${v.p0}`},
+ {cat:'PWM',name:'PWM STOP',syn:'PWM STOP <PWMx>',desc:'停止输出',params:[{label:'通道',type:'ch',opts:CH_PWM}],build:v=>`PWM STOP ${v.p0}`},
+ {cat:'PWM',name:'PWM SWEEP',syn:'PWM SWEEP <PWMx> <from> <to> <step_ms> [repeat]',desc:'渐变呼吸灯;repeat 0=无限',params:[
+   {label:'通道',type:'ch',opts:CH_PWM},{label:'起始%',type:'number',def:'0',min:0,max:100},
+   {label:'目标%',type:'number',def:'100',min:0,max:100},{label:'步进ms',type:'number',def:'10',min:1},
+   {label:'循环',type:'number',def:'0',min:0}],
+   build:v=>`PWM SWEEP ${v.p0} ${v.p1} ${v.p2} ${v.p3} ${v.p4}`},
+ {cat:'PWM',name:'PWM READ',syn:'PWM READ <PWMx>',desc:'查询频率/占空比/极性/运行状态',params:[{label:'通道',type:'ch',opts:CH_PWM}],build:v=>`PWM READ ${v.p0}`},
+ {cat:'PWM',name:'PWM SYNC',syn:'PWM SYNC <PWMx>,<PWMx>,...',desc:'同步重启列出的通道(相位锁定)。各通道须同频',params:[
+   {label:'通道列表',type:'text',def:'PWM1,PWM2',ph:'PWM1,PWM2,PWM3',wide:true}],
+   build:v=>`PWM SYNC ${v.p0}`},
+ {cat:'PWM',name:'PWM PHASE',syn:'PWM PHASE <PWMx> <ref> <deg>',desc:'设置 PWMx 相对 ref 的相位偏移 0~360°(同频;同片 A/B 仅 0/180°)',params:[
+   {label:'通道',type:'ch',opts:CH_PWM},{label:'参照',type:'ch',opts:CH_PWM},{label:'角度°',type:'number',def:'90',min:0,max:360}],
+   build:v=>`PWM PHASE ${v.p0} ${v.p1} ${v.p2}`},
+ {cat:'PWM',name:'PWM PHADJ',syn:'PWM PHADJ <PWMx> <delta>',desc:'运行中在线微调相位(delta 为计数器 ticks,可负;要求该片分频器>1)',params:[
+   {label:'通道',type:'ch',opts:CH_PWM},{label:'delta',type:'number',def:'1'}],
+   build:v=>`PWM PHADJ ${v.p0} ${v.p1}`},
+ {cat:'PWM',name:'PWM POL',syn:'PWM POL <PWMx> <NORMAL|INVERT>',desc:'输出极性;INVERT 等效 180° 移相',params:[
+   {label:'通道',type:'ch',opts:CH_PWM},{label:'极性',type:'select',opts:['NORMAL','INVERT']}],
+   build:v=>`PWM POL ${v.p0} ${v.p1}`},
+ {cat:'PWM',name:'PWM TICK',syn:'PWM TICK <PWMx> <freq> | OFF',desc:'1Hz 回调 + 真实输出:freq 低于硬件下限时该通道引脚输出真实 freq-Hz 方波;freq=0 关闭',params:[
+   {label:'通道',type:'ch',opts:CH_PWM},{label:'freq(0=OFF)',type:'number',def:'1',min:0,max:1000}],
+   build:v=>`PWM TICK ${v.p0} ${(+v.p1)>0?v.p1:'OFF'}`},
+
+ // ---------- UART ----------
+ {cat:'UART',name:'UART CFG',syn:'UART CFG <USARTx> <baud> [databits] [parity] [stopbits]',desc:'配置串口',params:[
+   {label:'通道',type:'ch',opts:CH_UART},{label:'波特率',type:'number',def:'115200',min:1200,max:7800000},
+   {label:'数据位',type:'select',opts:['8','7','6','5']},{label:'校验',type:'select',opts:['N','O','E']},
+   {label:'停止位',type:'select',opts:['1','2']}],
+   build:v=>`UART CFG ${v.p0} ${v.p1} ${v.p2} ${v.p3} ${v.p4}`},
+ {cat:'UART',name:'UART TX',syn:'UART TX <USARTx> <TXT:..|HEX:..>',desc:'发送文本或十六进制数据',params:[
+   {label:'通道',type:'ch',opts:CH_UART},{label:'编码',type:'select',opts:['TXT','HEX']},
+   {label:'数据',type:'text',def:'Hello',wide:true}],
+   build:v=>`UART TX ${v.p0} ${v.p1==='HEX'?'HEX:'+hexClean(v.p2):'TXT:'+v.p2}`},
+ {cat:'UART',name:'UART RX',syn:'UART RX <USARTx> [n]',desc:'读取接收缓冲(最多 n 字节,HEX 返回)',params:[
+   {label:'通道',type:'ch',opts:CH_UART},{label:'字节数',type:'number',def:'64',min:1}],
+   build:v=>`UART RX ${v.p0} ${v.p1}`},
+ {cat:'UART',name:'UART FLUSH',syn:'UART FLUSH <USARTx>',desc:'清空接收缓冲',params:[{label:'通道',type:'ch',opts:CH_UART}],build:v=>`UART FLUSH ${v.p0}`},
+ {cat:'UART',name:'UART STREAM',syn:'UART STREAM <USARTx> <ON|OFF>',desc:'接收透传:打开后数据实时 EVT UART_RX 上报',params:[
+   {label:'通道',type:'ch',opts:CH_UART},{label:'开关',type:'select',opts:['ON','OFF']}],
+   build:v=>`UART STREAM ${v.p0} ${v.p1}`},
+ {cat:'UART',name:'UART STAT',syn:'UART STAT <USARTx>',desc:'查询缓冲字节数与错误计数',params:[{label:'通道',type:'ch',opts:CH_UART}],build:v=>`UART STAT ${v.p0}`},
+
+ // ---------- I2C ----------
+ {cat:'I2C',name:'I2C CFG',syn:'I2C CFG <rate>',desc:'设置速率(100/400/1000 kHz)',params:[
+   {label:'速率',type:'select',opts:['400','100','1000']}],build:v=>`I2C CFG ${v.p0}`},
+ {cat:'I2C',name:'I2C SCAN',syn:'I2C SCAN',desc:'扫描总线,列出应答地址',multiline:true,params:[],build:()=>'I2C SCAN'},
+ {cat:'I2C',name:'I2C WRITE',syn:'I2C WRITE <addr> <reg> <data...>',desc:'寄存器寻址写数据(16 进制)',params:[
+   {label:'地址',type:'text',def:'3C',ph:'hex'},{label:'寄存器',type:'text',def:'00',ph:'hex'},
+   {label:'数据',type:'text',def:'AA BB',ph:'hex bytes',wide:true}],
+   build:v=>`I2C WRITE 0x${hexClean(v.p0)} 0x${hexClean(v.p1)} ${hexClean(v.p2)}`},
+ {cat:'I2C',name:'I2C WRONLY',syn:'I2C WRONLY <addr> <data...>',desc:'无寄存器地址直写',params:[
+   {label:'地址',type:'text',def:'3C',ph:'hex'},{label:'数据',type:'text',def:'AA BB',ph:'hex bytes',wide:true}],
+   build:v=>`I2C WRONLY 0x${hexClean(v.p0)} ${hexClean(v.p1)}`},
+ {cat:'I2C',name:'I2C READ',syn:'I2C READ <addr> <reg> <n>',desc:'寄存器寻址读 n 字节',params:[
+   {label:'地址',type:'text',def:'3C',ph:'hex'},{label:'寄存器',type:'text',def:'00',ph:'hex'},{label:'字节数',type:'number',def:'4',min:1}],
+   build:v=>`I2C READ 0x${hexClean(v.p0)} 0x${hexClean(v.p1)} ${v.p2}`},
+ {cat:'I2C',name:'I2C RONLY',syn:'I2C RONLY <addr> <n>',desc:'无寄存器地址直读 n 字节',params:[
+   {label:'地址',type:'text',def:'3C',ph:'hex'},{label:'字节数',type:'number',def:'4',min:1}],
+   build:v=>`I2C RONLY 0x${hexClean(v.p0)} ${v.p1}`},
+ {cat:'I2C',name:'I2C WR',syn:'I2C WR <addr> <reg> <n>',desc:'先写寄存器地址后读 n 字节',params:[
+   {label:'地址',type:'text',def:'3C',ph:'hex'},{label:'寄存器',type:'text',def:'00',ph:'hex'},{label:'字节数',type:'number',def:'4',min:1}],
+   build:v=>`I2C WR 0x${hexClean(v.p0)} 0x${hexClean(v.p1)} ${v.p2}`},
+
+ // ---------- SPI ----------
+ {cat:'SPI',name:'SPI CFG',syn:'SPI CFG <baud> [mode] [bitorder] [bits]',desc:'配置 SPI(mode 0~3;bits 4~16)',params:[
+   {label:'波特率',type:'number',def:'1000000',min:1},{label:'模式',type:'select',opts:['0','1','2','3']},
+   {label:'位序',type:'select',opts:['MSB','LSB']},{label:'位宽',type:'select',opts:['8','4','5','6','7','9','10','11','12','13','14','15','16']}],
+   build:v=>`SPI CFG ${v.p0} ${v.p1} ${v.p2} ${v.p3}`},
+ {cat:'SPI',name:'SPI XFR',syn:'SPI XFR <HEX:..>',desc:'全双工传输:同时发送并接收,返回收到的数据',params:[
+   {label:'数据',type:'text',def:'DE AD BE EF',ph:'hex bytes',wide:true}],
+   build:v=>`SPI XFR HEX:${v.p0.replace(/[^0-9a-fA-F]/g,'')}`},
+ {cat:'SPI',name:'SPI WRITE',syn:'SPI WRITE <HEX:..>',desc:'只发送(丢弃接收)',params:[
+   {label:'数据',type:'text',def:'A5 A5',ph:'hex bytes',wide:true}],
+   build:v=>`SPI WRITE HEX:${v.p0.replace(/[^0-9a-fA-F]/g,'')}`},
+ {cat:'SPI',name:'SPI READ',syn:'SPI READ <n>',desc:'只接收 n 字节(发送 0x00)',params:[
+   {label:'字节数',type:'number',def:'4',min:1}],build:v=>`SPI READ ${v.p0}`},
+ {cat:'SPI',name:'SPI CS',syn:'SPI CS <AUTO|HIGH|LOW>',desc:'CS 控制:AUTO 传输期间自动拉低',params:[
+   {label:'模式',type:'select',opts:['AUTO','LOW','HIGH']}],build:v=>`SPI CS ${v.p0}`},
+
+ // ---------- ADC ----------
+ {cat:'ADC',name:'ADC READ',syn:'ADC READ <ADCx>',desc:'单次读取,返回原始值 + 电压 mV',params:[{label:'通道',type:'ch',opts:CH_ADC}],build:v=>`ADC READ ${v.p0}`},
+ {cat:'ADC',name:'ADC READALL',syn:'ADC READALL',desc:'读取全部 3 路',multiline:true,params:[],build:()=>'ADC READALL'},
+ {cat:'ADC',name:'ADC SAMPLE',syn:'ADC SAMPLE <ADCx> <rate_Hz> <ms> [ON]',desc:'连续采样,数据流 DATA 上报;点「停止」发 STOP',params:[
+   {label:'通道',type:'ch',opts:CH_ADC},{label:'采样率Hz',type:'number',def:'2000',min:1,max:500000},
+   {label:'时长ms',type:'number',def:'300',min:1}],
+   build:v=>`ADC SAMPLE ${v.p0} ${v.p1} ${v.p2}`,
+   extra:[{label:'停止',build:v=>`ADC SAMPLE ${v.p0} STOP`}]},
+ {cat:'ADC',name:'ADC TEMP',syn:'ADC TEMP',desc:'读取片上温度传感器',params:[],build:()=>'ADC TEMP'},
+ {cat:'ADC',name:'ADC THRESH',syn:'ADC THRESH <ADCx> <low_mV> <high_mV> <ON|OFF>',desc:'阈值事件;0 0 表示单侧',params:[
+   {label:'通道',type:'ch',opts:CH_ADC},{label:'低mV',type:'number',def:'500',min:0},
+   {label:'高mV',type:'number',def:'2500',min:0},{label:'开关',type:'select',opts:['ON','OFF']}],
+   build:v=>`ADC THRESH ${v.p0} ${v.p1} ${v.p2} ${v.p3}`},
+ {cat:'ADC',name:'ADC DBG',syn:'ADC DBG',desc:'(调试)输出 ADC 寄存器状态',params:[],build:()=>'ADC DBG'},
+
+ // ---------- SEQ ----------
+ {cat:'SEQ',name:'SEQ DEF',syn:'SEQ DEF <name> "<step>;...;"',desc:'定义/覆盖序列。step 例:IO IO1 HIGH@0; WAIT 100; PWM PWM1 50@100',params:[
+   {label:'名称',type:'text',def:'blink',wide:true},
+   {label:'脚本',type:'text',def:'IO IO1 HIGH@0; WAIT 100; IO IO1 LOW@100; WAIT 100',wide:true}],
+   build:v=>`SEQ DEF ${v.p0} "${v.p1}"`},
+ {cat:'SEQ',name:'SEQ LIST',syn:'SEQ LIST',desc:'列出已定义序列',multiline:true,params:[],build:()=>'SEQ LIST'},
+ {cat:'SEQ',name:'SEQ SHOW',syn:'SEQ SHOW <name>',desc:'打印序列内容',multiline:true,params:[{label:'名称',type:'text',def:'blink'}],build:v=>`SEQ SHOW ${v.p0}`},
+ {cat:'SEQ',name:'SEQ RUN',syn:'SEQ RUN <name> [n]',desc:'执行;n 为循环次数(0=无限,默认 1)',params:[
+   {label:'名称',type:'text',def:'blink'},{label:'循环',type:'number',def:'1',min:0}],
+   build:v=>`SEQ RUN ${v.p0} ${v.p1}`},
+ {cat:'SEQ',name:'SEQ STOP',syn:'SEQ STOP',desc:'停止当前序列',params:[],build:()=>'SEQ STOP'},
+ {cat:'SEQ',name:'SEQ STAT',syn:'SEQ STAT',desc:'查询执行状态',params:[],build:()=>'SEQ STAT'},
+ {cat:'SEQ',name:'SEQ DEL',syn:'SEQ DEL <name>',desc:'删除序列',params:[{label:'名称',type:'text',def:'blink'}],build:v=>`SEQ DEL ${v.p0}`},
+
+ // ---------- 模式 ----------
+ {cat:'模式',name:'BIN ENTER',syn:'BIN ENTER',desc:'切换到二进制高速模式(本页为文本模式;进入后需用二进制 MODE_EXIT 或 RESET 返回)',params:[],build:()=>'BIN ENTER',confirm:'切换后将进入二进制模式,本页文本命令不再可用。确定切换吗?'},
+];
+
+/* ---------------- 渲染 ---------------- */
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+function hexClean(s){return String(s).replace(/[^0-9a-fA-F]/g,'');}
+function renderParam(idx,i,p){
+  const id=`p_${idx}_${i}`;
+  if(p.type==='ch'||p.type==='select'){
+    return `<label>${p.label}</label><select id="${id}">${p.opts.map(o=>`<option>${o}</option>`).join('')}</select>`;
+  }
+  if(p.type==='number'){
+    return `<label>${p.label}</label><input type="number" id="${id}" value="${p.def||''}" min="${p.min??''}" max="${p.max??''}" step="${p.step||1}">`;
+  }
+  return `<label>${p.label}</label><input type="text" id="${id}" value="${p.def||''}" placeholder="${p.ph||''}"${p.wide?' style="min-width:200px"':''}>`;
+}
+function render(){
+  const cats=[];const nav=[];
+  CMDS.forEach((c,i)=>{
+    if(!cats.includes(c.cat)){cats.push(c.cat);nav.push(`<a href="#cat-${c.cat}">${c.cat}</a>`);}
+  });
+  $('nav').innerHTML=nav.join('');
+  let html='';
+  cats.forEach(cat=>{
+    html+=`<div class="cat" id="cat-${cat}">${cat}<span class="n">${CMDS.filter(c=>c.cat===cat).length} 条</span></div><div class="cmdgrid">`;
+    CMDS.forEach((c,i)=>{
+      if(c.cat!==cat)return;
+      const params=c.params.map((p,j)=>renderParam(i,j,p)).join('');
+      const extra=(c.extra||[]).map(e=>`<button class="btn ghost sm" onclick="sendExtra(${i},${JSON.stringify(e.label)})">${e.label}</button>`).join('');
+      html+=`<div class="cmd">
+        <div class="cmd-head"><span class="cmd-name">${c.name}</span><span class="cmd-syn">${c.syn}</span></div>
+        <div class="cmd-desc">${c.desc}</div>
+        <div class="cmd-params">${params}</div>
+        <div class="cmd-actions">
+          <button class="btn mint sm" onclick="sendCmd(${i})">发送</button>${extra}
+        </div>
+        <div class="cmd-out" id="out_${i}"></div>
+      </div>`;
+    });
+    html+='</div>';
+  });
+  $('cats').innerHTML=html;
+}
+function readParam(idx,i,p){
+  const el=$(idx===undefined?'':`p_${idx}_${i}`);
+  if(!el)return '';
+  return el.value;
+}
+let lastCmd={};
+function showOut(idx,cmd,resp,isErr){
+  lastCmd[idx]=cmd;
+  const el=$('out_'+idx);el.style.display='block';el.className='cmd-out';
+  el.innerHTML=`<div class="sent"><code>&gt; ${esc(cmd)}</code><button class="btn" onclick="copyCmd(${idx})">📋 复制</button></div>`+
+    (resp?`<div class="resp${isErr?' err':''}">${esc(resp)}</div>`:'');
+}
+async function copyCmd(idx){
+  const t=lastCmd[idx]||'';
+  try{await navigator.clipboard.writeText(t);toast('已复制命令: '+t,'success');}
+  catch(e){toast('复制失败(需 HTTPS/localhost): '+e.message,'error');}
+}
+
+/* ---------------- 串口 ---------------- */
+let port=null,reader=null,writer=null,conn=false,rxBuf='',pending=null;
+function requireConn(){ if(!conn){toast('请先连接板卡','error');return false;} return true; }
+async function connect(){
+  try{
+    if(!('serial' in navigator)){toast('需 Chrome/Edge 并通过 localhost/HTTPS 打开','error');return;}
+    port=await navigator.serial.requestPort();
+    await port.open({baudRate:115200});
+    conn=true;writer=port.writable.getWriter();reader=port.readable.getReader();
+    $('statusDot').className='dot green';$('statusTxt').textContent='已连接';$('btnDisc').disabled=false;
+    toast('连接成功','success');readLoop();
+    const ping=await sendCommand('PING');
+    if(ping[0]&&ping[0].startsWith('OK'))$('statusTxt').textContent='已连接 '+ping[0].replace('OK PING PONG ','v');
+    else toast('注意:未识别到 IO Dock 固件(可能连错设备)','error');
+  }catch(e){toast('连接失败: '+e.message,'error');}
+}
+async function disconnect(){
+  conn=false;
+  if(pending){clearTimeout(pending.timer);pending=null;}
+  try{if(reader){await reader.cancel();reader.releaseLock();}if(writer)writer.releaseLock();if(port)await port.close();}catch(e){}
+  reader=null;writer=null;port=null;
+  $('statusDot').className='dot gray';$('statusTxt').textContent='未连接';$('btnDisc').disabled=true;
+}
+async function readLoop(){
+  const dec=new TextDecoder();
+  try{
+    while(conn&&reader){
+      const {value,done}=await reader.read();if(done)break;
+      rxBuf+=dec.decode(value,{stream:true});
+      let i;
+      while((i=rxBuf.indexOf('\n'))>=0){
+        const line=rxBuf.slice(0,i).replace(/\r$/,'');rxBuf=rxBuf.slice(i+1);
+        if(line.trim())handleLine(line.trim());
+      }
+    }
+  }catch(e){}
+}
+function addLog(cls,txt){
+  const log=$('evtLog');const d=document.createElement('div');d.className=cls;d.textContent=txt;
+  log.appendChild(d);while(log.children.length>200)log.firstChild.remove();
+  log.scrollTop=log.scrollHeight;
+}
+function handleLine(line){
+  if(line.startsWith('EVT ')){addLog('evt',line);return;}
+  if(line.startsWith('DATA')||line.startsWith('DATA_END')){addLog('data',line);return;}
+  if(pending){
+    pending.lines.push(line);
+    if(pending.multiline){
+      if(line==='END'||line.startsWith('ERR ')){finishPending();return;}
+    }else{
+      if(line.startsWith('OK ')||line.startsWith('ERR ')){finishPending();return;}
+    }
+  }else{
+    addLog(line.startsWith('ERR ')?'err':'ok',line);
+  }
+}
+function finishPending(){clearTimeout(pending.timer);const p=pending;pending=null;p.resolve(p.lines);}
+function sendCommand(line,{multiline=false,timeout=4000}={}){
+  return new Promise((resolve,reject)=>{
+    if(pending)pending.reject(new Error('busy'));
+    pending={multiline,lines:[],resolve,reject,timer:setTimeout(()=>{pending=null;reject(new Error('超时: '+line));},timeout)};
+    writer.write(new TextEncoder().encode(line+'\n')).catch(e=>{pending=null;reject(e);});
+  });
+}
+async function sendCmd(idx){
+  const c=CMDS[idx];
+  if(!requireConn())return;
+  if(c.confirm&&!confirm(c.confirm))return;
+  try{
+    const v={};c.params.forEach((p,j)=>{v['p'+j]=readParam(idx,j,p);});
+    const line=c.build(v);
+    addLog('tx','> '+line);
+    const r=await sendCommand(line,{multiline:!!c.multiline});
+    showOut(idx,line,r.join('\n'),r[0]&&r[0].startsWith('ERR'));
+  }catch(e){showOut(idx,line||'',e.message,true);}
+}
+async function sendExtra(idx,label){
+  const c=CMDS[idx];
+  if(!requireConn())return;
+  try{
+    const v={};c.params.forEach((p,j)=>{v['p'+j]=readParam(idx,j,p);});
+    const e=(c.extra||[]).find(x=>x.label===label);
+    const line=e.build(v);
+    addLog('tx','> '+line);
+    const r=await sendCommand(line,{multiline:!!c.multiline});
+    showOut(idx,line,r.join('\n'),r[0]&&r[0].startsWith('ERR'));
+  }catch(e){showOut(idx,line||'',e.message,true);}
+}
+
+render();
+</script>
+</body>
+</html>

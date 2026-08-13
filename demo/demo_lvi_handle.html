@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LIV 手持 · 定时同步演示</title>
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--ink:#1e293b;--muted:#64748b;--line:#e6eaf2;
+  --primary:#5b6ee1;--mint:#10b981;--coral:#ef5b5b;--sky:#3aa0ff;--peach:#f59e0b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI','PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:
+  radial-gradient(1200px 500px at 10% -10%,#eef1fd,transparent 50%),var(--bg);color:var(--ink);font-size:14px}
+.wrap{max-width:1060px;margin:0 auto;padding:22px 18px 60px}
+header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.logo{width:44px;height:44px;border-radius:13px;background:linear-gradient(135deg,#f59e0b,#ef5b5b);
+  display:grid;place-items:center;color:#fff;font-size:20px}
+.brand h1{font-size:19px}.brand p{color:var(--muted);font-size:12.5px}
+.conn{margin-left:auto;display:flex;align-items:center;gap:10px}
+.btn{font:inherit;border:none;border-radius:10px;padding:8px 14px;cursor:pointer;font-weight:600;transition:.15s}
+.btn.primary{background:var(--primary);color:#fff}.btn.mint{background:var(--mint);color:#fff}
+.btn.coral{background:var(--coral);color:#fff}.btn.sky{background:var(--sky);color:#fff}
+.btn.ghost{background:#fff;border:1.5px solid var(--line)}
+.btn.sm{padding:5px 10px;font-size:12.5px}.btn:disabled{opacity:.45;cursor:not-allowed}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px}
+.dot.gray{background:#cbd5e1}.dot.green{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18)}
+select,input[type=number],input[type=text]{font:inherit;border:1.5px solid var(--line);border-radius:9px;padding:7px 9px;outline:none}
+select:focus,input:focus{border-color:var(--primary)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 4px 18px rgba(30,41,59,.05);margin-bottom:14px}
+.card h3{font-size:14px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.ctl{display:flex;align-items:center;gap:8px;margin:8px 0;flex-wrap:wrap}
+.ctl label{color:var(--muted);font-size:12.5px;min-width:70px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.desc{color:var(--muted);font-size:12.5px;margin-bottom:10px}
+.badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--sky);color:#fff}
+.badge.hz1{background:var(--peach)}
+.chmap{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin:10px 0}
+.chmap .ch{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:12.5px;display:flex;flex-direction:column;gap:3px}
+.ch .nm{font-weight:700}.ch .pin{color:var(--muted);font-size:11.5px}
+.ch .role{font-weight:700;padding:1px 8px;border-radius:999px;font-size:11.5px;align-self:flex-start}
+.ch.role1 .role{background:#fde68a;color:#92400e}
+.ch.role10 .role{background:#bfdbfe;color:#1e40af}
+.ch .st{color:var(--muted);font-size:11.5px}
+.ch.on .st{color:#16a34a}
+.nmea{font-family:ui-monospace,Consolas,monospace;font-size:13px;background:#0f172a;color:#a5f3fc;border-radius:10px;
+  padding:12px 14px;word-break:break-all;line-height:1.7;margin-top:8px}
+.chart-box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px;margin-top:12px}
+canvas{width:100%;height:auto;display:block;border-radius:8px;background:#fbfcfe}
+.legend{display:flex;gap:16px;font-size:12px;color:var(--muted);padding:5px 4px 0;flex-wrap:wrap}
+.lv{display:inline-flex;align-items:center;gap:6px}
+.log{background:#fbfcfe;border:1px solid var(--line);border-radius:10px;padding:10px;height:170px;overflow-y:auto;
+  font-family:ui-monospace,Consolas,monospace;font-size:12px;margin-top:10px}
+.log div{padding:1px 3px;color:#334155}
+.kpi{display:inline-flex;flex-direction:column;background:var(--bg);border:1px solid var(--line);border-radius:12px;
+  padding:10px 14px;min-width:120px}
+.kpi b{font-size:20px;color:var(--primary)}
+.kpi span{font-size:11.5px;color:var(--muted)}
+.toasts{position:fixed;top:16px;right:16px;z-index:99;display:flex;flex-direction:column;gap:8px}
+.toast{background:#fff;border-radius:12px;padding:10px 14px;box-shadow:0 8px 24px rgba(30,41,59,.16);border-left:4px solid var(--primary);animation:slide .25s}
+.toast.success{border-left-color:var(--mint)}.toast.error{border-left-color:var(--coral)}
+@keyframes slide{from{opacity:0;transform:translateX(16px)}}
+</style>
+</head>
+<body>
+<div class="toasts" id="toasts"></div>
+<div class="wrap">
+  <header>
+    <div class="logo">⏱️</div>
+    <div class="brand">
+      <h1>LIV 手持 · 定时同步演示</h1>
+      <p>4 路 PWM:可选 1 路输出 1Hz,其余 3 路 10Hz;每秒相位对齐 + GPRMC 时间同步输出</p>
+    </div>
+    <div class="conn">
+      <button class="btn primary" onclick="connect()">🔌 连接</button>
+      <button class="btn ghost" onclick="disconnect()" id="btnDisc" disabled>断开</button>
+      <span><span class="dot gray" id="statusDot"></span><span id="statusTxt">未连接</span></span>
+    </div>
+  </header>
+
+  <div class="card">
+    <h3>🟦 PWM 输出 <span class="badge hz1">3×10Hz + 1×1Hz</span></h3>
+    <div class="desc">选中 1 路输出 1Hz 方波,其余 3 路输出 10Hz;每秒在 1Hz 周期边界对齐 10Hz 相位。</div>
+    <div class="ctl">
+      <label>1Hz 通道</label>
+      <select id="hzSel">
+        <option value="PWM1">PWM1</option>
+        <option value="PWM2">PWM2</option>
+        <option value="PWM3" selected>PWM3</option>
+        <option value="PWM4">PWM4</option>
+      </select>
+      <button class="btn mint" id="pwmBtn" onclick="togglePwm()">▶ 启动</button>
+      <button class="btn ghost sm" onclick="pwmStop()">停止</button>
+      <div class="kpi"><b id="syncCount">0</b><span>已对齐次数</span></div>
+    </div>
+    <div class="chmap" id="chmap"></div>
+    <div class="chart-box">
+      <canvas id="pwmWave" width="1100" height="220"></canvas>
+      <div class="legend" id="pwmLegend"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>🟨 GPRMC 时间同步输出 <span class="badge">NMEA · 每 1 秒</span></h3>
+    <div class="desc">复刻原固件每 1 秒经 UART 输出的 <code>$GPRMC</code> 语句:UTC 时间每秒递增,含 XOR 校验和。页面实时生成,并可选择经板卡 UART 真正发出。</div>
+    <div class="ctl">
+      <label>起始时间</label>
+      <input type="text" id="startTime" value="00:00:00" style="width:80px">
+      <label>发送到</label>
+      <select id="uartCh"><option value="1">USART1</option><option value="2">USART2</option></select>
+      <button class="btn sky sm" id="gprmcBtn" onclick="toggleGprmc()">▶ 开始输出</button>
+      <button class="btn ghost sm" onclick="gprmcReset()">重置时间</button>
+      <label style="margin-left:10px">板卡 1Hz tick 驱动</label>
+      <input type="checkbox" id="boardTick" checked>
+      <label style="margin-left:10px">经 UART 发送</label>
+      <input type="checkbox" id="uartOut" checked>
+    </div>
+    <div class="row">
+      <div class="kpi"><b id="gprmcTime">00:00:00</b><span>UTC 时间</span></div>
+      <div class="kpi"><b id="gprmcCheck">--</b><span>校验和</span></div>
+      <div class="kpi"><b id="gprmcCnt">0</b><span>已输出行数</span></div>
+    </div>
+    <div class="nmea" id="gprmcLine">等待开始…</div>
+    <div class="log" id="gprmcLog"><div>NMEA 输出日志…</div></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+function toast(m,t='info'){
+  const el=document.createElement('div');el.className='toast '+t;el.textContent=m;
+  $('toasts').appendChild(el);setTimeout(()=>{el.style.opacity=0;el.style.transition='.3s';setTimeout(()=>el.remove(),300)},2800);
+}
+
+/* ---------- serial + protocol ---------- */
+let port=null,reader=null,writer=null,conn=false,rxBuf='',pending=null;
+function requireConn(){ if(!conn){toast('请先连接板卡','error');return false;} return true; }
+async function connect(){
+  try{
+    if(!('serial' in navigator)){toast('需 Chrome/Edge 并通过 localhost/HTTPS 打开','error');return;}
+    port=await navigator.serial.requestPort();
+    await port.open({baudRate:115200});
+    conn=true;writer=port.writable.getWriter();reader=port.readable.getReader();
+    $('statusDot').className='dot green';$('statusTxt').textContent='已连接';$('btnDisc').disabled=false;
+    toast('连接成功','success');readLoop();
+    const ping=await sendCommand('PING');
+    if(ping[0]&&ping[0].startsWith('OK')){
+      $('statusTxt').textContent='已连接 '+ping[0].replace('OK PING PONG ','v');
+      toast('IO Dock: '+ping[0].replace('OK PING PONG ','版本 '),'success');
+    }else{
+      toast('注意:未识别到 IO Dock 固件(可能连错设备),命令会超时','error');
+    }
+  }catch(e){toast('连接失败: '+e.message,'error');}
+}
+async function disconnect(){
+  conn=false;
+  if(pending){clearTimeout(pending.timer);pending=null;}
+  try{if(reader){await reader.cancel();reader.releaseLock();}if(writer)writer.releaseLock();if(port)await port.close();}catch(e){}
+  reader=null;writer=null;port=null;
+  $('statusDot').className='dot gray';$('statusTxt').textContent='未连接';$('btnDisc').disabled=true;
+  stopGprmc();
+  if(pwmTimer){clearInterval(pwmTimer);pwmTimer=null;$('pwmBtn').textContent='▶ 启动';$('pwmBtn').style.background='var(--mint)';}
+  toast('已断开','info');
+}
+async function readLoop(){
+  const dec=new TextDecoder();
+  try{
+    while(conn&&reader){
+      const {value,done}=await reader.read();if(done)break;
+      rxBuf+=dec.decode(value,{stream:true});
+      let i;
+      while((i=rxBuf.indexOf('\n'))>=0){
+        const line=rxBuf.slice(0,i).replace(/\r$/,'');rxBuf=rxBuf.slice(i+1);
+        if(line.trim())handleLine(line.trim());
+      }
+    }
+  }catch(e){}
+}
+function handleLine(line){
+  if(line.startsWith('EVT ')){
+    // 板卡 1Hz 回调:收到 EVT PWM_TICK 就发一次串口数据
+    if(line.startsWith('EVT PWM_TICK') && boardTickOn) gprmcTick();
+    return;
+  }
+  if(line.startsWith('DATA '))return;
+  if(pending){
+    pending.lines.push(line);
+    if((line.startsWith('OK ')||line.startsWith('ERR '))&&!pending.multiline){finishPending();return;}
+    if(pending.multiline&&line==='END'){finishPending();return;}
+  }
+}
+function finishPending(){clearTimeout(pending.timer);const p=pending;pending=null;p.resolve(p.lines);}
+function sendCommand(line,{multiline=false,timeout=4000}={}){
+  return new Promise((resolve,reject)=>{
+    if(pending)pending.reject(new Error('busy'));
+    pending={multiline,lines:[],resolve,reject,timer:setTimeout(()=>{pending=null;reject(new Error('超时: '+line+' (可能连接失效,请先断开再重新连接)'));},timeout)};
+    writer.write(new TextEncoder().encode(line+'\n')).catch(e=>{pending=null;reject(e);});
+  });
+}
+// 只管发出、不等回复:用于周期性数据(如 GPRMC 的 UART TX),不占用 pending 槽,
+// 避免与每秒的 PWM SYNC 等命令抢同一通道导致互相 reject。
+function sendNoWait(line){
+  if(!conn)return;
+  writer.write(new TextEncoder().encode(line+'\n')).catch(e=>{});
+}
+
+/* ---------- PWM 定时同步: 3×10Hz + 1×真实1Hz ---------- */
+const CHS=['PWM1','PWM2','PWM3','PWM4'];
+let pwmTimer=null, syncCount=0;
+
+function hzSel(){ return $('hzSel').value; }
+function others(){ return CHS.filter(c=>c!==hzSel()); }
+
+function renderChmap(running){
+  const sel=hzSel();
+  $('chmap').innerHTML=CHS.map(ch=>{
+    const is1hz = ch===sel;
+    return `<div class="ch ${is1hz?'role1':'role10'} ${running?'on':''}">
+      <span class="nm">${ch}</span>
+      <span class="role">${is1hz?'1Hz':'10Hz'}</span>
+      <span class="st">${running?'运行中':'停止'}</span>
+    </div>`;
+  }).join('');
+}
+function setPwmBtn(on){
+  $('pwmBtn').textContent=on?'⏹ 停止':'▶ 启动';
+  $('pwmBtn').style.background=on?'var(--coral)':'var(--mint)';
+}
+
+async function togglePwm(){
+  if(!requireConn())return;
+  if(pwmTimer){ pwmStop(); return; }
+  const sel=hzSel();
+  try{
+    // 其余三路:10Hz
+    for(const c of others()){
+      await sendCommand(`PWM CFG ${c} 10 50`);
+      await sendCommand(`PWM START ${c}`);
+    }
+    // 选中通道:1Hz 输出 + EVT PWM_TICK
+    const r=await sendCommand(`PWM TICK ${sel} 1`);
+    if(!r[0].startsWith('OK')){ toast('PWM TICK 失败: '+errCode(r[0]),'error'); return; }
+    renderChmap(true); setPwmBtn(true);
+    pwmSync(); // 立即对齐一次
+    pwmTimer=setInterval(pwmSync,1000);
+    toast(`${sel} 输出 1Hz,其余 3 路 10Hz,每秒相位对齐`,'success');
+  }catch(e){ toast('PWM 启动失败: '+e.message,'error'); }
+}
+async function pwmSync(){
+  if(!conn)return;
+  const r=await sendCommand(`PWM SYNC ${others().join(',')}`);
+  if(r[0]&&r[0].startsWith('OK')){
+    syncCount++;
+    $('syncCount').textContent=syncCount;
+  }
+  drawPwm();
+}
+async function pwmStop(){
+  if(!conn)return;
+  await sendCommand('PWM TICK OFF');
+  for(const c of CHS){ await sendCommand(`PWM STOP ${c}`); }
+  if(pwmTimer){clearInterval(pwmTimer);pwmTimer=null;}
+  syncCount=0;$('syncCount').textContent='0';
+  renderChmap(false);setPwmBtn(false);drawPwm();
+  toast('PWM 已停止','info');
+}
+
+// 波形:1Hz 通道(2s 窗口,500ms 半周期)与 10Hz 通道(同窗口 50ms 半周期)叠画
+function drawPwm(){
+  const c=$('pwmWave'),ctx=c.getContext('2d'),W=c.width,H=c.height;
+  ctx.clearRect(0,0,W,H);
+  const padL=60,padT=14,padR=16,padB=18,plotW=W-padL-padR,plotH=H-padT-padB;
+  const totalMs=2000, msPerPx=totalMs/plotW;
+  // grid every 500ms
+  ctx.font='11px sans-serif';ctx.textAlign='center';ctx.textBaseline='top';
+  for(let s=0;s<=4;s++){
+    const x=padL+(s*500)/msPerPx;
+    ctx.strokeStyle=s%2?'#eef1f6':'#d8dee9';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(x,padT);ctx.lineTo(x,padT+plotH);ctx.stroke();
+    ctx.fillStyle='#94a3b8';ctx.fillText((s*500)+'ms',x,padT+plotH+4);
+    if(s>0&&s<4){ // 1Hz 周期边界标记
+      ctx.fillStyle='#f59e0b';
+      ctx.beginPath();ctx.moveTo(x,padT);ctx.lineTo(x-5,padT+8);ctx.lineTo(x+5,padT+8);ctx.closePath();ctx.fill();
+    }
+  }
+  const sel=hzSel();
+  // 1Hz 通道
+  const y1=padT+plotH*0.22,amp1=plotH*0.16;
+  ctx.strokeStyle='#ef5b5b';ctx.lineWidth=2.5;ctx.lineJoin='round';
+  ctx.beginPath();
+  for(let x=padL;x<=W-padR;x++){
+    const t=(x-padL)*msPerPx;
+    const hi=((t/500)%2)>=1;               // 低0-500,高500-1000
+    const y=y1-(hi?amp1:-amp1);
+    x===padL?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  // 10Hz 通道(代表一路)
+  const y2=padT+plotH*0.72,amp2=plotH*0.16;
+  ctx.strokeStyle='#2e7bff';ctx.lineWidth=1.6;ctx.lineJoin='round';
+  ctx.beginPath();
+  for(let x=padL;x<=W-padR;x++){
+    const t=(x-padL)*msPerPx;
+    const hi=((t/50)%2)<1;                 // 高0-50,低50-100
+    const y=y2-(hi?amp2:-amp2);
+    x===padL?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  ctx.fillStyle='#1e293b';ctx.font='600 11px sans-serif';ctx.textAlign='right';ctx.textBaseline='middle';
+  ctx.fillText(`${sel} ·1Hz`,padL-6,y1);
+  ctx.fillText(`${others()[0]} ·10Hz`,padL-6,y2);
+  $('pwmLegend').innerHTML=
+    `<span class="lv"><span style="width:16px;height:4px;background:#ef5b5b;display:inline-block;border-radius:2px"></span>${sel} 1Hz</span>
+     <span class="lv"><span style="width:16px;height:4px;background:#2e7bff;display:inline-block;border-radius:2px"></span>${others()[0]} 10Hz</span>
+     <span class="lv"><span style="color:#f59e0b">▲</span>1Hz 周期边界(10Hz 在此对齐)</span>`;
+}
+
+/* ---------- GPRMC 时间同步输出 ---------- */
+let gprmcTimer=null, hh=0, mm=0, ss=0, gprmcCnt=0, gprmcLineStr='';
+function pad2(n){return String(n).padStart(2,'0');}
+function gprmcChecksum(body){
+  let x=0;for(let i=0;i<body.length;i++)x^=body.charCodeAt(i);
+  return (x&0xff).toString(16).toUpperCase().padStart(2,'0');
+}
+function buildGprmc(){
+  const body=`GPRMC,${pad2(hh)}${pad2(mm)}${pad2(ss)}.00,A,2237.496474,N,11356.089515,E,0.0,225.5,230520,2.3,W,A`;
+  return '$'+body+'*'+gprmcChecksum(body);
+}
+let gprmcRunning=false, boardTickOn=false;
+function toggleGprmc(forceStop){
+  if(!requireConn()&&!forceStop)return;
+  if(gprmcRunning){ stopGprmc(); return; }
+  gprmcReset();
+  gprmcRunning=true;
+  if($('boardTick').checked){
+    // 由板卡 1Hz PWM 中断驱动:用当前选中的 1Hz 通道
+    sendCommand(`PWM TICK ${hzSel()} 1`).then(r=>{
+      if(r[0].startsWith('OK')){
+        boardTickOn=true;
+        $('gprmcBtn').textContent='⏹ 停止输出';$('gprmcBtn').style.background='var(--coral)';
+        toast('使用板卡 1Hz tick 驱动','success');
+        gprmcTick(); // 立即输出第一行,不等下一个 tick
+      } else { gprmcRunning=false; toast('1Hz tick 启动失败: '+errCode(r[0]),'error'); }
+    });
+  } else {
+    gprmcTick();
+    gprmcTimer=setInterval(gprmcTick,1000);
+    $('gprmcBtn').textContent='⏹ 停止输出';$('gprmcBtn').style.background='var(--coral)';
+    toast('GPRMC 每秒输出已开始(网页定时)','success');
+  }
+}
+function stopGprmc(){
+  gprmcRunning=false;
+  if(gprmcTimer){clearInterval(gprmcTimer);gprmcTimer=null;}
+  if(boardTickOn){ sendCommand('PWM TICK OFF'); boardTickOn=false; }
+  $('gprmcBtn').textContent='▶ 开始输出';$('gprmcBtn').style.background='var(--sky)';
+}
+function gprmcReset(){
+  const p=$('startTime').value.split(':');
+  hh=(+p[0]||0)%24;mm=(+p[1]||0)%60;ss=(+p[2]||0)%60;
+  gprmcCnt=0;$('gprmcCnt').textContent='0';
+  updateGprmcDisplay();
+}
+function tickTime(){ ss++; if(ss>=60){ss=0;mm++;if(mm>=60){mm=0;hh=(hh+1)%24;}} }
+async function gprmcTick(){
+  if(!conn)return;
+  tickTime();
+  gprmcLineStr=buildGprmc();
+  gprmcCnt++;
+  $('gprmcTime').textContent=`${pad2(hh)}:${pad2(mm)}:${pad2(ss)}`;
+  $('gprmcCheck').textContent='0x'+gprmcChecksum(`GPRMC,${pad2(hh)}${pad2(mm)}${pad2(ss)}.00,A`);
+  $('gprmcCnt').textContent=gprmcCnt;
+  $('gprmcLine').textContent=gprmcLineStr;
+  const log=$('gprmcLog');
+  log.insertAdjacentHTML('afterbegin',`<div>${esc(gprmcLineStr)}</div>`);
+  while(log.children.length>40)log.lastChild.remove();
+  if($('uartOut').checked){
+    const u=$('uartCh').value;
+    sendNoWait(`UART TX USART${u} TXT:${gprmcLineStr}`);
+  }
+}
+function updateGprmcDisplay(){
+  $('gprmcTime').textContent=`${pad2(hh)}:${pad2(mm)}:${pad2(ss)}`;
+}
+function errCode(line){const m=String(line).match(/^ERR ([A-Z0-9_]+)/);return m?m[1]:line;}
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+
+// init map
+renderChmap(false);drawPwm();
+</script>
+</body>
+</html>
