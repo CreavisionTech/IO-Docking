@@ -132,7 +132,8 @@ function toast(m,t='info'){
 }
 
 /* ---------- serial + protocol ---------- */
-let port=null,reader=null,writer=null,conn=false,rxBuf='',pending=null;
+let port=null,reader=null,writer=null,conn=false,rxBuf='';
+let cmdQueue=[], pending=null;   // 下行命令 FIFO + 当前等待回复的命令
 function requireConn(){ if(!conn){toast('请先连接板卡','error');return false;} return true; }
 async function connect(){
   try{
@@ -154,6 +155,8 @@ async function connect(){
 async function disconnect(){
   conn=false;
   if(pending){clearTimeout(pending.timer);pending=null;}
+  const q=cmdQueue;cmdQueue=[];
+  for(const c of q)if(c.wait)c.reject(new Error('连接已断开'));
   try{if(reader){await reader.cancel();reader.releaseLock();}if(writer)writer.releaseLock();if(port)await port.close();}catch(e){}
   reader=null;writer=null;port=null;
   $('statusDot').className='dot gray';$('statusTxt').textContent='未连接';$('btnDisc').disabled=true;
@@ -182,25 +185,51 @@ function handleLine(line){
     return;
   }
   if(line.startsWith('DATA '))return;
-  if(pending){
+  if(!pending)return;
+  if(pending.wait){
     pending.lines.push(line);
     if((line.startsWith('OK ')||line.startsWith('ERR '))&&!pending.multiline){finishPending();return;}
     if(pending.multiline&&line==='END'){finishPending();return;}
+  } else {
+    // 不等回复的命令(如 UART TX):吞掉它的 OK/ERR 响应,避免污染正在等待的命令
+    if((line.startsWith('OK ')||line.startsWith('ERR '))&&!pending.multiline){advancePending();return;}
+    if(pending.multiline&&line==='END'){advancePending();return;}
   }
 }
-function finishPending(){clearTimeout(pending.timer);const p=pending;pending=null;p.resolve(p.lines);}
-function sendCommand(line,{multiline=false,timeout=4000}={}){
-  return new Promise((resolve,reject)=>{
-    if(pending)pending.reject(new Error('busy'));
-    pending={multiline,lines:[],resolve,reject,timer:setTimeout(()=>{pending=null;reject(new Error('超时: '+line+' (可能连接失效,请先断开再重新连接)'));},timeout)};
-    writer.write(new TextEncoder().encode(line+'\n')).catch(e=>{pending=null;reject(e);});
+function finishPending(){clearTimeout(pending.timer);const p=pending;pending=null;p.resolve(p.lines);pumpQueue();}
+function advancePending(){clearTimeout(pending.timer);const p=pending;pending=null;p.resolve();pumpQueue();}
+function pumpQueue(){
+  if(pending||!cmdQueue.length)return;
+  const p=cmdQueue.shift();
+  pending=p;
+  if(!conn){pending=null;if(p.wait)p.reject(new Error('连接已断开'));else p.resolve();pumpQueue();return;}
+  p.timer=setTimeout(()=>{
+    if(pending!==p)return;
+    pending=null;
+    if(p.wait)p.reject(new Error('超时: '+p.line+' (可能连接失效,请先断开再重新连接)'));
+    else p.resolve();
+    pumpQueue();
+  },p.timeout);
+  writer.write(new TextEncoder().encode(p.line+'\n')).catch(e=>{
+    if(pending!==p)return;
+    clearTimeout(p.timer);
+    pending=null;
+    if(p.wait)p.reject(e);else p.resolve();
+    pumpQueue();
   });
 }
-// 只管发出、不等回复:用于周期性数据(如 GPRMC 的 UART TX),不占用 pending 槽,
-// 避免与每秒的 PWM SYNC 等命令抢同一通道导致互相 reject。
+function sendCommand(line,{multiline=false,timeout=4000}={}){
+  return new Promise((resolve,reject)=>{
+    cmdQueue.push({line,wait:true,multiline,timeout,lines:[],resolve,reject});
+    pumpQueue();
+  });
+}
+// 只管发出、不等回复:用于周期性数据(如 GPRMC 的 UART TX)。同样入队以保持
+// 下行顺序,但其响应会被 handleLine 吞掉,不会占用/干扰等待中的命令。
 function sendNoWait(line){
   if(!conn)return;
-  writer.write(new TextEncoder().encode(line+'\n')).catch(e=>{});
+  cmdQueue.push({line,wait:false,multiline:false,timeout:3000,lines:[],resolve:()=>{},reject:()=>{}});
+  pumpQueue();
 }
 
 /* ---------- PWM 定时同步: 3×10Hz + 1×真实1Hz ---------- */
@@ -226,9 +255,12 @@ function setPwmBtn(on){
   $('pwmBtn').style.background=on?'var(--coral)':'var(--mint)';
 }
 
+let pwmBusy=false;
 async function togglePwm(){
   if(!requireConn())return;
-  if(pwmTimer){ pwmStop(); return; }
+  if(pwmBusy)return;
+  if(pwmTimer){ await pwmStop(); return; }
+  pwmBusy=true;
   const sel=hzSel();
   try{
     // 其余三路:10Hz
@@ -238,30 +270,39 @@ async function togglePwm(){
     }
     // 选中通道:1Hz 输出 + EVT PWM_TICK
     const r=await sendCommand(`PWM TICK ${sel} 1`);
-    if(!r[0].startsWith('OK')){ toast('PWM TICK 失败: '+errCode(r[0]),'error'); return; }
+    if(!r[0]||!r[0].startsWith('OK')){ toast('PWM TICK 失败: '+errCode(r[0]),'error'); return; }
     renderChmap(true); setPwmBtn(true);
     pwmSync(); // 立即对齐一次
     pwmTimer=setInterval(pwmSync,1000);
     toast(`${sel} 输出 1Hz,其余 3 路 10Hz,每秒相位对齐`,'success');
   }catch(e){ toast('PWM 启动失败: '+e.message,'error'); }
+  finally{ pwmBusy=false; }
 }
 async function pwmSync(){
   if(!conn)return;
-  const r=await sendCommand(`PWM SYNC ${others().join(',')}`);
-  if(r[0]&&r[0].startsWith('OK')){
-    syncCount++;
-    $('syncCount').textContent=syncCount;
-  }
+  try{
+    const r=await sendCommand(`PWM SYNC ${others().join(',')}`);
+    if(r[0]&&r[0].startsWith('OK')){
+      syncCount++;
+      $('syncCount').textContent=syncCount;
+    }
+  }catch(e){ /* 命令超时/断开等,跳过本轮 */ }
   drawPwm();
 }
 async function pwmStop(){
-  if(!conn)return;
-  await sendCommand('PWM TICK OFF');
-  for(const c of CHS){ await sendCommand(`PWM STOP ${c}`); }
-  if(pwmTimer){clearInterval(pwmTimer);pwmTimer=null;}
-  syncCount=0;$('syncCount').textContent='0';
-  renderChmap(false);setPwmBtn(false);drawPwm();
-  toast('PWM 已停止','info');
+  if(!conn||pwmBusy)return;
+  pwmBusy=true;
+  try{
+    await sendCommand('PWM TICK OFF');
+    for(const c of CHS){ await sendCommand(`PWM STOP ${c}`); }
+  }catch(e){ toast('PWM 停止失败: '+e.message,'error'); }
+  finally{
+    if(pwmTimer){clearInterval(pwmTimer);pwmTimer=null;}
+    syncCount=0;$('syncCount').textContent='0';
+    renderChmap(false);setPwmBtn(false);drawPwm();
+    pwmBusy=false;
+    toast('PWM 已停止','info');
+  }
 }
 
 // 波形:1Hz 通道(2s 窗口,500ms 半周期)与 10Hz 通道(同窗口 50ms 半周期)叠画
@@ -334,13 +375,13 @@ function toggleGprmc(forceStop){
   if($('boardTick').checked){
     // 由板卡 1Hz PWM 中断驱动:用当前选中的 1Hz 通道
     sendCommand(`PWM TICK ${hzSel()} 1`).then(r=>{
-      if(r[0].startsWith('OK')){
+      if(r[0]&&r[0].startsWith('OK')){
         boardTickOn=true;
         $('gprmcBtn').textContent='⏹ 停止输出';$('gprmcBtn').style.background='var(--coral)';
         toast('使用板卡 1Hz tick 驱动','success');
         gprmcTick(); // 立即输出第一行,不等下一个 tick
       } else { gprmcRunning=false; toast('1Hz tick 启动失败: '+errCode(r[0]),'error'); }
-    });
+    }).catch(e=>{ gprmcRunning=false; toast('1Hz tick 启动失败: '+e.message,'error'); });
   } else {
     gprmcTick();
     gprmcTimer=setInterval(gprmcTick,1000);
@@ -351,7 +392,7 @@ function toggleGprmc(forceStop){
 function stopGprmc(){
   gprmcRunning=false;
   if(gprmcTimer){clearInterval(gprmcTimer);gprmcTimer=null;}
-  if(boardTickOn){ sendCommand('PWM TICK OFF'); boardTickOn=false; }
+  if(boardTickOn){ sendNoWait('PWM TICK OFF'); boardTickOn=false; }
   $('gprmcBtn').textContent='▶ 开始输出';$('gprmcBtn').style.background='var(--sky)';
 }
 function gprmcReset(){
