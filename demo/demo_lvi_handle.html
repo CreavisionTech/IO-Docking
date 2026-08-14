@@ -305,8 +305,12 @@ async function pwmStop(){
   }
 }
 
-// 波形:1Hz 通道(2s 窗口,500ms 半周期)与 10Hz 通道(同窗口 50ms 半周期)叠画
-function drawPwm(){
+// 波形:1Hz 通道(2s 窗口,500ms 半周期)与 10Hz 通道(同窗口 50ms 半周期)叠画。
+// now 为当前相位(ms);仅当 PWM 运行时由动画循环推进,停止时冻结。
+let lastLegendSel=null;
+let wavePhase=0, waveLast=null;
+function drawPwm(now){
+  if(now==null)now=wavePhase;
   const c=$('pwmWave'),ctx=c.getContext('2d'),W=c.width,H=c.height;
   ctx.clearRect(0,0,W,H);
   const padL=60,padT=14,padR=16,padB=18,plotW=W-padL-padR,plotH=H-padT-padB;
@@ -329,7 +333,7 @@ function drawPwm(){
   ctx.strokeStyle='#ef5b5b';ctx.lineWidth=2.5;ctx.lineJoin='round';
   ctx.beginPath();
   for(let x=padL;x<=W-padR;x++){
-    const t=(x-padL)*msPerPx;
+    const t=(x-padL)*msPerPx+now;         // 滚动相位
     const hi=((t/500)%2)>=1;               // 低0-500,高500-1000
     const y=y1-(hi?amp1:-amp1);
     x===padL?ctx.moveTo(x,y):ctx.lineTo(x,y);
@@ -340,7 +344,7 @@ function drawPwm(){
   ctx.strokeStyle='#2e7bff';ctx.lineWidth=1.6;ctx.lineJoin='round';
   ctx.beginPath();
   for(let x=padL;x<=W-padR;x++){
-    const t=(x-padL)*msPerPx;
+    const t=(x-padL)*msPerPx+now;
     const hi=((t/50)%2)<1;                 // 高0-50,低50-100
     const y=y2-(hi?amp2:-amp2);
     x===padL?ctx.moveTo(x,y):ctx.lineTo(x,y);
@@ -349,11 +353,22 @@ function drawPwm(){
   ctx.fillStyle='#1e293b';ctx.font='600 11px sans-serif';ctx.textAlign='right';ctx.textBaseline='middle';
   ctx.fillText(`${sel} ·1Hz`,padL-6,y1);
   ctx.fillText(`${others()[0]} ·10Hz`,padL-6,y2);
-  $('pwmLegend').innerHTML=
-    `<span class="lv"><span style="width:16px;height:4px;background:#ef5b5b;display:inline-block;border-radius:2px"></span>${sel} 1Hz</span>
-     <span class="lv"><span style="width:16px;height:4px;background:#2e7bff;display:inline-block;border-radius:2px"></span>${others()[0]} 10Hz</span>
-     <span class="lv"><span style="color:#f59e0b">▲</span>1Hz 周期边界(10Hz 在此对齐)</span>`;
+  if(sel!==lastLegendSel){
+    lastLegendSel=sel;
+    $('pwmLegend').innerHTML=
+      `<span class="lv"><span style="width:16px;height:4px;background:#ef5b5b;display:inline-block;border-radius:2px"></span>${sel} 1Hz</span>
+       <span class="lv"><span style="width:16px;height:4px;background:#2e7bff;display:inline-block;border-radius:2px"></span>${others()[0]} 10Hz</span>
+       <span class="lv"><span style="color:#f59e0b">▲</span>1Hz 周期边界(10Hz 在此对齐)</span>`;
+  }
 }
+// 动画循环:只在 PWM 运行时(已连接并启动)推进相位,停止时曲线冻结
+function waveLoop(now){
+  if(waveLast!=null && pwmTimer) wavePhase += now - waveLast;
+  waveLast = now;
+  drawPwm(wavePhase);
+  requestAnimationFrame(waveLoop);
+}
+requestAnimationFrame(waveLoop);
 
 /* ---------- GPRMC 时间同步输出 ---------- */
 let gprmcTimer=null, hh=0, mm=0, ss=0, gprmcCnt=0, gprmcLineStr='';
