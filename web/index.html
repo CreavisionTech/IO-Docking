@@ -524,6 +524,15 @@ canvas{width:100%;height:160px;display:block;border-radius:8px;background:#fbfcf
         <div class="desc">② 把固件文件 <b>io_dock-v0.1.uf2</b> 拖入该 U 盘,板卡自动重启完成烧录。</div>
         <button class="btn coral sm" style="width:100%;margin-top:8px" onclick="sysBootloader()">进入烧写模式</button>
       </div>
+      <div class="card">
+        <h3>💾 参数持久化</h3>
+        <div class="desc">把当前参数(PWM/IO/UART/I2C/SPI/序列)保存到 flash,掉电重启自动恢复。</div>
+        <div class="row">
+          <button class="btn mint sm" onclick="cfgSave()">SAVE 保存</button>
+          <button class="btn ghost sm" onclick="cfgLoad()">LOAD 恢复</button>
+          <button class="btn coral sm" onclick="cfgClear()">CFG CLEAR 清除</button>
+        </div>
+      </div>
     </div>
   </section>
 </div>
@@ -597,10 +606,10 @@ function sendRaw(s){
 function sendCommand(line,{multiline=false,timeout=3500}={}){
   return new Promise((resolve,reject)=>{
     const key=line.split(' ')[0];
-    if(pending){pending.reject(new Error('上一命令未完成'));}
+    if(pending){clearTimeout(pending.timer);pending.reject(new Error('上一命令未完成: '+pending.key));}
     pending={key,multiline,lines:[],resolve,reject,
-      timer:setTimeout(()=>{pending=null;reject(new Error('响应超时: '+line));},timeout)};
-    writer.write(new TextEncoder().encode(line+'\n')).catch(e=>{pending=null;reject(e);});
+      timer:setTimeout(()=>{if(pending&&pending.key===key){pending=null;reject(new Error('响应超时: '+line));}},timeout)};
+    writer.write(new TextEncoder().encode(line+'\n')).catch(e=>{if(pending&&pending.key===key){pending=null;reject(e);}});
   });
 }
 function finishPending(lines){
@@ -745,8 +754,18 @@ function renderPWM(){
       <h3>🎛️ ${names[i]}</h3>
       <div class="ctl"><label>频率</label><input type="number" data-p="${i}" class="p-freq" value="1000" min="1"><span style="color:var(--muted)">Hz</span></div>
       <div class="ctl"><label>占空比</label>
-        <input type="range" data-p="${i}" class="p-duty" min="0" max="100" value="50">
-        <span class="slider-val" data-p="${i}">50%</span></div>
+        <input type="range" data-p="${i}" class="p-duty" min="0" max="100" step="0.1" value="50">
+        <input type="number" data-p="${i}" class="p-duty-num" min="0" max="100" step="0.1" value="50" style="width:64px">
+        <span class="slider-val" data-p="${i}">50.0%</span><span style="color:var(--muted);font-size:11px">0.1%</span></div>
+      <div class="ctl"><label>范围</label>
+        <input type="number" data-p="${i}" class="p-range-min" value="0" min="0" max="100" step="0.1" style="width:52px">
+        <span style="color:var(--muted)">~</span>
+        <input type="number" data-p="${i}" class="p-range-max" value="100" min="0" max="100" step="0.1" style="width:52px">
+        <button class="btn ghost sm" onclick="pwmRangePreset(${i},0,100)">全范围</button>
+        <button class="btn ghost sm" onclick="pwmRangePreset(${i},0,10)">0-10</button>
+        <button class="btn ghost sm" onclick="pwmRangePreset(${i},0,1)">0-1</button>
+        <button class="btn ghost sm" onclick="pwmRangePreset(${i},40,60)">40-60</button>
+      </div>
       <div class="row">
         <button class="btn mint sm" onclick="pwmApply(${i})">应用</button>
         <button class="btn sky sm" onclick="pwmStart(${i})">启动</button>
@@ -767,10 +786,16 @@ function renderPWM(){
       </div>`;
     g.appendChild(card);
     const duty=card.querySelector('.p-duty');
-    duty.addEventListener('input',()=>{
-      card.querySelector('.slider-val').textContent=duty.value+'%';
-      drawPwmWave();
+    const dutyNum=card.querySelector('.p-duty-num');
+    const sv=card.querySelector('.slider-val');
+    const syncDuty=()=>{ sv.textContent=(+dutyNum.value).toFixed(1)+'%'; };
+    duty.addEventListener('input',()=>{ dutyNum.value=duty.value; syncDuty(); drawPwmWave(); });
+    dutyNum.addEventListener('input',()=>{
+      let v=parseFloat(dutyNum.value); if(isNaN(v))v=0; if(v<0)v=0; if(v>100)v=100;
+      dutyNum.value=v; duty.value=v; syncDuty(); drawPwmWave();
     });
+    card.querySelector('.p-range-min').addEventListener('input',()=>pwmRangeInputs(i));
+    card.querySelector('.p-range-max').addEventListener('input',()=>pwmRangeInputs(i));
     card.querySelector('.p-freq').addEventListener('input', drawPwmWave);
   }
   // 相位选择
@@ -798,7 +823,27 @@ function renderWaveSelector(){
   }
 }
 function pwmFreq(i){ return parseFloat($('pwmGrid').querySelector(`.p-freq[data-p="${i}"]`).value)||1; }
-function pwmDuty(i){ return parseFloat($('pwmGrid').querySelector(`.p-duty[data-p="${i}"]`).value)||0; }
+function pwmDuty(i){ return parseFloat($('pwmGrid').querySelector(`.p-duty-num[data-p="${i}"]`).value)||0; }
+// 范围缩放:把滑条 min/max 设为用户选的范围(仅影响拖动精细度,输入框始终是真实占空比)
+function pwmRangeInputs(i){
+  const g=$('pwmGrid');
+  const rmin=g.querySelector(`.p-range-min[data-p="${i}"]`), rmax=g.querySelector(`.p-range-max[data-p="${i}"]`);
+  let lo=parseFloat(rmin.value), hi=parseFloat(rmax.value);
+  if(isNaN(lo))lo=0; if(isNaN(hi))hi=100;
+  if(lo<0)lo=0; if(hi>100)hi=100; if(hi<lo)hi=lo;
+  rmin.value=lo; rmax.value=hi;
+  const duty=g.querySelector(`.p-duty[data-p="${i}"]`);
+  duty.min=lo; duty.max=hi;
+  let v=parseFloat(duty.value); if(isNaN(v))v=lo;
+  if(v>hi)v=hi; if(v<lo)v=lo;
+  duty.value=v;
+}
+function pwmRangePreset(i,lo,hi){
+  const g=$('pwmGrid');
+  g.querySelector(`.p-range-min[data-p="${i}"]`).value=lo;
+  g.querySelector(`.p-range-max[data-p="${i}"]`).value=hi;
+  pwmRangeInputs(i);
+}
 
 function drawPwmWave(){
   const c=$('pwmWave'), ctx=c.getContext('2d'), W=c.width, H=c.height;
@@ -865,47 +910,74 @@ async function ioApply(i){
   const dir=ioDir(i), pull=document.querySelector(`.io-pull[data-io="${i}"]`).value;
   let cmd=`IO CFG IO${i+1} ${dir}`;
   if(dir==='IN'&&pull!=='0')cmd+=' '+(pull==='1'?'PULLUP':'PULLDOWN');
-  const r=await sendCommand(cmd);
-  if(r[0].startsWith('OK')){toast(`IO${i+1} 配置为${dir==='OUT'?'输出':'输入'}`,'success');}
-  else toast('配置失败: '+errCode(r[0]),'error');
+  try{
+    const r=await sendCommand(cmd);
+    if(r[0]&&r[0].startsWith('OK')){toast(`IO${i+1} 配置为${dir==='OUT'?'输出':'输入'}`,'success');}
+    else toast('配置失败: '+errCode(r[0]),'error');
+  }catch(e){toast('配置失败: '+e.message,'error');}
 }
 async function ioWrite(i,v){
-  const r=await sendCommand(`IO WRITE IO${i+1} ${v?'HIGH':'LOW'}`);
-  const dot=document.querySelector(`.led[data-io="${i}"]`);
-  if(r[0].startsWith('OK')){dot.className='led '+(v?'hi':'lo');document.querySelector(`.io-txt[data-io="${i}"]`).textContent=v?'HIGH':'LOW';}
-  else toast('写失败: '+errCode(r[0]),'error');
+  if(!requireConn())return;
+  try{
+    // 固件要求先配置为输出才能写电平(io_write 对未配置输出返回 E_CFG),
+    // 这里自动确保输出模式,避免"能读不能控"。
+    const c=await sendCommand(`IO CFG IO${i+1} OUT`);
+    if(!c[0]||!c[0].startsWith('OK')){toast('配置输出失败: '+errCode(c[0]),'error');return;}
+    const r=await sendCommand(`IO WRITE IO${i+1} ${v?'HIGH':'LOW'}`);
+    const dot=document.querySelector(`.led[data-io="${i}"]`);
+    if(r[0]&&r[0].startsWith('OK')){dot.className='led '+(v?'hi':'lo');document.querySelector(`.io-txt[data-io="${i}"]`).textContent=v?'HIGH':'LOW';}
+    else toast('写失败: '+errCode(r[0]),'error');
+  }catch(e){toast('写失败: '+e.message,'error');}
 }
 async function ioRead(i){
-  const r=await sendCommand(`IO READ IO${i+1}`);
-  if(r[0].startsWith('OK')){
-    const lv=r[0].split(' ')[4];
-    document.querySelector(`.led[data-io="${i}"]`).className='led '+(lv==='HIGH'?'hi':'lo');
-    document.querySelector(`.io-txt[data-io="${i}"]`).textContent=lv;
-    toast(`IO${i+1} = ${lv}`,'info');
-  } else toast('读失败: '+errCode(r[0]),'error');
+  if(!requireConn())return;
+  try{
+    const r=await sendCommand(`IO READ IO${i+1}`);
+    if(r[0]&&r[0].startsWith('OK')){
+      const lv=r[0].split(' ')[4];
+      document.querySelector(`.led[data-io="${i}"]`).className='led '+(lv==='HIGH'?'hi':'lo');
+      document.querySelector(`.io-txt[data-io="${i}"]`).textContent=lv;
+      toast(`IO${i+1} = ${lv}`,'info');
+    } else toast('读失败: '+errCode(r[0]),'error');
+  }catch(e){toast('读失败: '+e.message,'error');}
 }
 async function ioToggle(i){
-  const r=await sendCommand(`IO TOGGLE IO${i+1}`);
-  if(r[0].startsWith('OK'))ioRead(i); else toast('翻转失败','error');
+  if(!requireConn())return;
+  try{
+    const c=await sendCommand(`IO CFG IO${i+1} OUT`);
+    if(!c[0]||!c[0].startsWith('OK')){toast('配置输出失败: '+errCode(c[0]),'error');return;}
+    const r=await sendCommand(`IO TOGGLE IO${i+1}`);
+    if(r[0]&&r[0].startsWith('OK'))ioRead(i); else toast('翻转失败','error');
+  }catch(e){toast('翻转失败: '+e.message,'error');}
 }
 async function ioPulse(i){
+  if(!requireConn())return;
   const ms=document.querySelector(`.io-pulse-ms[data-io="${i}"]`).value;
-  const r=await sendCommand(`IO PULSE IO${i+1} LOW ${ms}`);
-  if(r[0].startsWith('OK'))toast(`IO${i+1} 脉冲 ${ms}ms`,'success'); else toast('脉冲失败: '+errCode(r[0]),'error');
+  try{
+    const r=await sendCommand(`IO PULSE IO${i+1} LOW ${ms}`);
+    if(r[0]&&r[0].startsWith('OK'))toast(`IO${i+1} 脉冲 ${ms}ms`,'success'); else toast('脉冲失败: '+errCode(r[0]),'error');
+  }catch(e){toast('脉冲失败: '+e.message,'error');}
 }
 async function ioEvent(i){
+  if(!requireConn())return;
   const mode=document.querySelector(`.io-evt[data-io="${i}"]`).value;
-  const r=await sendCommand(`IO EVENT IO${i+1} ${mode==='0'?'OFF':'ON '+(mode==='1'?'RISING':mode==='2'?'FALLING':'CHANGE')}`);
-  if(r[0].startsWith('OK'))toast(`IO${i+1} 事件已${mode==='0'?'关闭':'开启'}`,'success'); else toast('事件配置失败','error');
+  try{
+    const r=await sendCommand(`IO EVENT IO${i+1} ${mode==='0'?'OFF':'ON '+(mode==='1'?'RISING':mode==='2'?'FALLING':'CHANGE')}`);
+    if(r[0]&&r[0].startsWith('OK'))toast(`IO${i+1} 事件已${mode==='0'?'关闭':'开启'}`,'success'); else toast('事件配置失败','error');
+  }catch(e){toast('事件配置失败: '+e.message,'error');}
 }
 
 /* ==================== PWM ==================== */
 const pwmNames=['PWM1','PWM2','PWM3','PWM4'];
 async function pwmApply(i){
   const f=$('pwmGrid').querySelector(`.p-freq[data-p="${i}"]`).value;
-  const d=$('pwmGrid').querySelector(`.p-duty[data-p="${i}"]`).value;
-  const r=await sendCommand(`PWM CFG ${pwmNames[i]} ${f} ${d}`);
-  r[0].startsWith('OK')?toast(`${pwmNames[i]} ${f}Hz ${d}%`,'success'):toast('配置失败: '+errCode(r[0]),'error');
+  let d=parseFloat($('pwmGrid').querySelector(`.p-duty-num[data-p="${i}"]`).value);
+  if(isNaN(d))d=0;
+  d=Math.max(0,Math.min(100,d));
+  // 0.1% 分辨率 → 16 位原始值;固件 `#N` 表示原始计数
+  const raw=Math.max(0,Math.min(65535,Math.round(d*655.35)));
+  const r=await sendCommand(`PWM CFG ${pwmNames[i]} ${f} #${raw}`);
+  r[0].startsWith('OK')?toast(`${pwmNames[i]} ${f}Hz ${d.toFixed(1)}%`,'success'):toast('配置失败: '+errCode(r[0]),'error');
 }
 async function pwmStart(i){ const r=await sendCommand(`PWM START ${pwmNames[i]}`); r[0].startsWith('OK')?toast(`${pwmNames[i]} 启动`,'success'):toast('失败: '+errCode(r[0]),'error'); }
 async function pwmStop(i){ const r=await sendCommand(`PWM STOP ${pwmNames[i]}`); r[0].startsWith('OK')?toast(`${pwmNames[i]} 停止`,'info'):toast('失败: '+errCode(r[0]),'error'); }
@@ -1172,6 +1244,18 @@ function sysBootloader(){
   sendRaw('BOOTLOADER');
   toast('已进入烧写模式,请等待板卡枚举为 U 盘后拖入固件文件','success');
   setTimeout(disconnect,800);
+}
+async function cfgSave(){
+  if(!requireConn())return;
+  try{const r=await sendCommand('SAVE');r[0]&&r[0].startsWith('OK')?toast('配置已保存到 flash','success'):toast('保存失败: '+errCode(r[0]),'error');}catch(e){toast('保存失败: '+e.message,'error');}
+}
+async function cfgLoad(){
+  if(!requireConn())return;
+  try{const r=await sendCommand('LOAD');r[0]&&r[0].startsWith('OK')?toast('配置已恢复','success'):toast('恢复失败: '+errCode(r[0]),'error');}catch(e){toast('恢复失败: '+e.message,'error');}
+}
+async function cfgClear(){
+  if(!requireConn())return;
+  try{const r=await sendCommand('CFG CLEAR');r[0]&&r[0].startsWith('OK')?toast('已清除保存的配置','info'):toast('清除失败','error');}catch(e){toast('清除失败','error');}
 }
 
 console.log('✅ IO Dock 控制台已加载');
