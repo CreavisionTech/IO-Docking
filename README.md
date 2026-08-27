@@ -36,9 +36,9 @@ IO Dock 是一款**即插即用的电脑外设扩展坞**。它通过一根 USB 
 
 **方式 A · Web 控制台(推荐,零安装)**
 
-用 Chrome 或 Edge 直接打开 [web/index.html](web/index.html),点击「连接」选择对应串口,即可图形化操作全部功能。
+用 Chrome 或 Edge 打开 **[在线 Web 控制台](https://creavisiontech.github.io/IO-Docking/)**(GitHub Pages 静态页,HTTPS 下 Web Serial 直接可用),点击「连接」选择对应串口,即可图形化操作全部功能。
 
-> 若以 `file://` 方式打开时无法使用串口,可在该目录运行 `python -m http.server` 后访问 `http://localhost:8000`。
+> 也可直接打开 [web/index.html](web/index.html);若以 `file://` 方式打开时无法使用串口,可在该目录运行 `python -m http.server` 后访问 `http://localhost:8000`。
 
 **方式 B · 任意串口终端**
 
@@ -76,7 +76,8 @@ OK SEQ RUN
 
 | 路径 | 说明 |
 | --- | --- |
-| [web/index.html](web/index.html) | Web 控制台(单文件、零依赖,Web Serial + 文本协议) |
+| [web/index.html](web/index.html) | Web 控制台(单文件、零依赖,Web Serial + 文本协议)。已部署到 GitHub Pages:[https://creavisiontech.github.io/IO-Docking/](https://creavisiontech.github.io/IO-Docking/) |
+| [.github/workflows/pages.yml](.github/workflows/pages.yml) | GitHub Actions:把 `web/` 自动部署到 GitHub Pages |
 | [protocol/protocol.html](protocol/protocol.html) | 文本协议交互式手册 |
 | [protocol/protocol_bin.html](protocol/protocol_bin.html) | 二进制协议交互式手册 |
 | [demo/demo_mpu6050_iic.html](demo/demo_mpu6050_iic.html) | 示例:通过 I2C 实时读取 MPU6050 六轴数据并绘制曲线 |
