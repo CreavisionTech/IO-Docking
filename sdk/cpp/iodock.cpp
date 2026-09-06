@@ -8,8 +8,14 @@
 #include <algorithm>
 #include <stdexcept>
 #include <iostream>
+#include <regex>
+#include <cerrno>
+#include <cctype>
 
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #else
 #include <fcntl.h>
@@ -19,11 +25,15 @@
 #endif
 
 namespace iodock {
+namespace { thread_local IODock* callbackDock = nullptr; }
 
 // ============================================================================
 // 串口实现（跨平台）
 // ============================================================================
 
+#ifdef IODOCK_TEST_TRANSPORT
+#include "tests/mock_serial.inc"
+#endif
 class SerialPort {
 public:
     SerialPort(const std::string& port, uint32_t baud) 
@@ -32,7 +42,9 @@ public:
     ~SerialPort() { close(); }
     
     bool open() {
-#ifdef _WIN32
+#ifdef IODOCK_TEST_TRANSPORT
+        handle_ = 1; return true;
+#elif defined(_WIN32)
         std::string fullPort = "\\\\.\\" + port_;
         handle_ = (intptr_t)CreateFileA(fullPort.c_str(), 
             GENERIC_READ | GENERIC_WRITE, 0, nullptr, 
@@ -51,6 +63,19 @@ public:
         dcb.ByteSize = 8;
         dcb.Parity = NOPARITY;
         dcb.StopBits = ONESTOPBIT;
+        // Do not inherit a previous application's handshake/flow-control state.
+        // TinyUSB CDC accepts commands only while DTR is asserted.
+        dcb.fBinary = TRUE;
+        dcb.fParity = FALSE;
+        dcb.fOutxCtsFlow = FALSE;
+        dcb.fOutxDsrFlow = FALSE;
+        dcb.fDtrControl = DTR_CONTROL_ENABLE;
+        dcb.fDsrSensitivity = FALSE;
+        dcb.fOutX = FALSE;
+        dcb.fInX = FALSE;
+        dcb.fNull = FALSE;
+        dcb.fRtsControl = RTS_CONTROL_ENABLE;
+        dcb.fAbortOnError = FALSE;
         
         if (!SetCommState((HANDLE)handle_, &dcb)) {
             close();
@@ -59,10 +84,10 @@ public:
         
         // 设置超时
         COMMTIMEOUTS timeouts = {0};
-        timeouts.ReadIntervalTimeout = 50;
-        timeouts.ReadTotalTimeoutMultiplier = 10;
-        timeouts.ReadTotalTimeoutConstant = 100;
-        SetCommTimeouts((HANDLE)handle_, &timeouts);
+        timeouts.ReadIntervalTimeout = MAXDWORD;
+        timeouts.ReadTotalTimeoutConstant = 10;
+        timeouts.WriteTotalTimeoutConstant = 1000;
+        if (!SetCommTimeouts((HANDLE)handle_, &timeouts)) { close(); return false; }
         
         return true;
 #else
@@ -82,7 +107,11 @@ public:
         tty.c_cflag &= ~PARENB;
         tty.c_cflag &= ~CSTOPB;
         tty.c_cflag |= CLOCAL | CREAD;
+#ifdef CRTSCTS
+        tty.c_cflag &= ~CRTSCTS;
+#endif
         
+        cfmakeraw(&tty);
         tty.c_iflag &= ~(IXON | IXOFF | IXANY);
         tty.c_lflag = 0;
         tty.c_oflag = 0;
@@ -100,7 +129,9 @@ public:
     }
     
     void close() {
-#ifdef _WIN32
+#ifdef IODOCK_TEST_TRANSPORT
+        handle_ = -1;
+#elif defined(_WIN32)
         if (handle_ != -1) {
             CloseHandle((HANDLE)handle_);
             handle_ = -1;
@@ -116,7 +147,9 @@ public:
     bool isOpen() const { return handle_ != -1; }
     
     int write(const std::string& data) {
-#ifdef _WIN32
+#ifdef IODOCK_TEST_TRANSPORT
+        return mock::write(data);
+#elif defined(_WIN32)
         DWORD written;
         if (!WriteFile((HANDLE)handle_, data.c_str(), data.size(), &written, nullptr)) {
             return -1;
@@ -128,7 +161,7 @@ public:
     }
     
     std::string readLine(uint32_t timeoutMs = 1000) {
-        std::string result;
+
         auto start = std::chrono::steady_clock::now();
         
         while (true) {
@@ -138,14 +171,18 @@ public:
             if (n > 0) {
                 if (c == '\n') {
                     // 去除末尾 \r
-                    if (!result.empty() && result.back() == '\r') {
-                        result.pop_back();
+                    if (!partial_.empty() && partial_.back() == '\r') {
+                        partial_.pop_back();
                     }
+                    std::string result;
+                    result.swap(partial_);
                     return result;
                 }
-                result += c;
+                partial_ += c;
             }
             
+            if (n < 0) throw std::runtime_error("Serial read failed");
+            if (n == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
             // 检查超时
             auto now = std::chrono::steady_clock::now();
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
@@ -154,33 +191,30 @@ public:
             }
         }
         
-        return result;
+        return {}; // Keep incomplete lines for the next read.
     }
     
-    void flush() {
-#ifdef _WIN32
-        PurgeComm((HANDLE)handle_, PURGE_RXCLEAR | PURGE_TXCLEAR);
-#else
-        tcflush(handle_, TCIOFLUSH);
-#endif
-    }
 
 private:
     int read(void* buf, size_t count) {
-#ifdef _WIN32
+#ifdef IODOCK_TEST_TRANSPORT
+        return mock::read(buf, count);
+#elif defined(_WIN32)
         DWORD bytesRead;
         if (!ReadFile((HANDLE)handle_, buf, count, &bytesRead, nullptr)) {
             return -1;
         }
         return bytesRead;
 #else
-        return ::read(handle_, buf, count);
+        int n = ::read(handle_, buf, count);
+        return n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) ? 0 : n;
 #endif
     }
     
     std::string port_;
     uint32_t baud_;
     intptr_t handle_;
+    std::string partial_;
 };
 
 // ============================================================================
@@ -198,37 +232,58 @@ IODock::~IODock() {
 // ---------- 连接管理 ----------
 
 bool IODock::open() {
+    std::lock_guard<std::mutex> commandLock(commandMutex_);
     std::lock_guard<std::mutex> lock(mutex_);
-    
-    if (serial_ && serial_->isOpen()) {
-        return true;
-    }
-    
+    if (serial_) return receiving_ && synchronized_;
     serial_ = new SerialPort(port_, baud_);
     if (!serial_->open()) {
         delete serial_;
         serial_ = nullptr;
         return false;
     }
-    
-    // 清空缓冲区
-    serial_->flush();
-    
+    responses_.clear();
+    events_.clear();
+    synchronized_ = true;
+    receiving_ = true;
+    readerThread_ = std::thread(&IODock::receiveLoop, this);
     return true;
 }
 
 void IODock::close() {
+    receiving_ = false;
+    responseReady_.notify_all();
+    stopEventListener();
+    std::lock_guard<std::mutex> commandLock(commandMutex_);
+    if (readerThread_.joinable()) readerThread_.join();
     std::lock_guard<std::mutex> lock(mutex_);
-    
-    if (serial_) {
-        serial_->close();
-        delete serial_;
-        serial_ = nullptr;
-    }
+    delete serial_;
+    serial_ = nullptr;
 }
 
 bool IODock::isOpen() const {
-    return serial_ && serial_->isOpen();
+    return receiving_;
+}
+
+void IODock::receiveLoop() {
+    try {
+        while (receiving_) {
+            auto line = serial_->readLine(50);
+            if (line.empty()) continue;
+            std::lock_guard<std::mutex> lock(mutex_);
+            const auto kind = line.substr(0, line.find(' '));
+            if (kind == "EVT" || kind == "DATA" || kind == "DATA_END") {
+                events_.push_back(line);
+                eventReady_.notify_one();
+            } else {
+                responses_.push_back(line);
+                responseReady_.notify_one();
+            }
+        }
+    } catch (...) {
+        receiving_ = false;
+        responseReady_.notify_all();
+        eventReady_.notify_all();
+    }
 }
 
 bool IODock::ping() {
@@ -245,21 +300,12 @@ std::map<std::string, std::string> IODock::getInfo() {
     if (!resp.success) return info;
     
     std::istringstream iss(resp.payload);
-    std::string line;
-    while (std::getline(iss, line)) {
-        auto pos = line.find('=');
-        if (pos != std::string::npos) {
-            std::string key = line.substr(0, pos);
-            std::string val = line.substr(pos + 1);
-            // 去除首尾空格
-            key.erase(0, key.find_first_not_of(" \t"));
-            key.erase(key.find_last_not_of(" \t") + 1);
-            val.erase(0, val.find_first_not_of(" \t"));
-            val.erase(val.find_last_not_of(" \t") + 1);
-            info[key] = val;
-        }
+    std::string token;
+    while (iss >> token) {
+        auto pos = token.find('=');
+        if (pos != std::string::npos) info[token.substr(0, pos)] = token.substr(pos + 1);
     }
-    
+
     return info;
 }
 
@@ -308,32 +354,29 @@ void IODock::ioWrite(IOChannel ch, Level level) {
 
 Level IODock::ioRead(IOChannel ch) {
     auto resp = sendCommand("IO READ " + channelName(ch));
-    if (resp.success && resp.payload.find("HIGH") != std::string::npos) {
-        return Level::HIGH;
-    }
-    return Level::LOW;
+    if (!resp.success) return Level::LOW;
+    if (resp.payload == channelName(ch) + " HIGH") return Level::HIGH;
+    if (resp.payload == channelName(ch) + " LOW") return Level::LOW;
+    throw std::runtime_error("Malformed IO response");
 }
 
 std::vector<Level> IODock::ioReadAll() {
     std::vector<Level> levels(6, Level::LOW);
     auto resp = sendCommand("IO READALL");
-    
     if (!resp.success) return levels;
-    
-    // 解析 "IO1 HIGH IO2 LOW ..." 格式
-    for (int i = 0; i < 6; i++) {
-        std::string key = "IO" + std::to_string(i + 1);
-        auto pos = resp.payload.find(key);
-        if (pos != std::string::npos) {
-            auto highPos = resp.payload.find("HIGH", pos);
-            auto lowPos = resp.payload.find("LOW", pos);
-            if (highPos != std::string::npos && 
-                (lowPos == std::string::npos || highPos < lowPos)) {
-                levels[i] = Level::HIGH;
-            }
-        }
+    bool seen[6] = {};
+    std::istringstream fields(resp.payload);
+    std::string channel, level;
+    while (fields >> channel) {
+        if (!(fields >> level) || channel.size() != 3 || channel.substr(0, 2) != "IO" ||
+            channel[2] < '1' || channel[2] > '6' || (level != "HIGH" && level != "LOW"))
+            throw std::runtime_error("Malformed IO READALL response");
+        auto index = channel[2] - '1';
+        if (seen[index]) throw std::runtime_error("Duplicate IO channel");
+        seen[index] = true;
+        levels[index] = level == "HIGH" ? Level::HIGH : Level::LOW;
     }
-    
+    for (bool present : seen) if (!present) throw std::runtime_error("Missing IO channel");
     return levels;
 }
 
@@ -366,7 +409,7 @@ void IODock::ioEvent(IOChannel ch, bool enable, Edge edge) {
 
 void IODock::pwmConfig(PWMChannel ch, uint32_t freqHz, uint16_t duty, bool isPercent) {
     std::string cmd = "PWM CFG " + channelName(ch) + " " + 
-                      std::to_string(freqHz) + " " + std::to_string(duty);
+                      std::to_string(freqHz) + " " + (isPercent ? "" : "#") + std::to_string(duty);
     sendCommand(cmd);
 }
 
@@ -398,17 +441,24 @@ PWMConfig IODock::pwmRead(PWMChannel ch) {
     auto resp = sendCommand("PWM READ " + channelName(ch));
     
     if (resp.success) {
-        // 解析响应（简化处理）
-        if (resp.payload.find("running") != std::string::npos) {
-            config.running = true;
-        }
+        std::smatch match;
+        if (!std::regex_match(resp.payload, match,
+            std::regex(R"(PWM[1-4] ([0-9]+)Hz ([0-9]+)% (running|stopped) pol=(normal|invert))")))
+            throw std::runtime_error("Malformed PWM response");
+        auto frequency = std::stoull(match[1]);
+        auto percent = std::stoul(match[2]);
+        if (frequency > UINT32_MAX || percent > 100) throw std::runtime_error("PWM response out of range");
+        config.frequency = static_cast<uint32_t>(frequency);
+        config.duty = static_cast<uint16_t>((percent * 65535u + 50u) / 100u);
+        config.running = match[3] == "running";
+        config.inverted = match[4] == "invert";
     }
-    
+
     return config;
 }
 
 void IODock::pwmSync(const std::vector<PWMChannel>& channels) {
-    std::string cmd = "PWM SYNC";
+    std::string cmd = "PWM SYNC ";
     for (size_t i = 0; i < channels.size(); i++) {
         if (i > 0) cmd += ",";
         cmd += channelName(channels[i]);
@@ -504,9 +554,7 @@ std::vector<uint8_t> IODock::i2cScan() {
 void IODock::i2cWriteReg(uint8_t addr, uint8_t reg, const std::vector<uint8_t>& data) {
     std::string cmd = "I2C WRITE 0x" + bytesToHex({addr}) + 
                       " 0x" + bytesToHex({reg});
-    for (auto b : data) {
-        cmd += " 0x" + bytesToHex({b});
-    }
+    cmd += " " + bytesToHex(data);
     sendCommand(cmd);
 }
 
@@ -525,9 +573,7 @@ std::vector<uint8_t> IODock::i2cReadReg(uint8_t addr, uint8_t reg, uint16_t coun
 
 void IODock::i2cWrite(uint8_t addr, const std::vector<uint8_t>& data) {
     std::string cmd = "I2C WRONLY 0x" + bytesToHex({addr});
-    for (auto b : data) {
-        cmd += " 0x" + bytesToHex({b});
-    }
+    cmd += " " + bytesToHex(data);
     sendCommand(cmd);
 }
 
@@ -584,53 +630,45 @@ void IODock::spiCS(const std::string& mode) {
 
 // ---------- ADC 控制 ----------
 
+namespace {
+ADCReading parseADC(const std::string& payload, const std::string& channel) {
+    std::istringstream input(payload);
+    std::string actual, raw, mv, extra;
+    if (!(input >> actual >> raw >> mv) || input >> extra || actual != channel ||
+        !std::regex_match(raw, std::regex("[0-9]+")) ||
+        !std::regex_match(mv, std::regex("[0-9]+mV")))
+        throw std::runtime_error("Malformed ADC response");
+    auto r = std::stoul(raw), v = std::stoul(mv.substr(0, mv.size() - 2));
+    if (r > 4095 || v > 3300) throw std::runtime_error("ADC response out of range");
+    return {static_cast<uint16_t>(r), static_cast<uint16_t>(v)};
+}
+}
+
 ADCReading IODock::adcRead(ADCChannel ch) {
-    ADCReading reading = {0, 0};
     auto resp = sendCommand("ADC READ " + channelName(ch));
-    
-    if (resp.success) {
-        // 解析 "2048 1650mV" 格式
-        std::istringstream iss(resp.payload);
-        std::string rawStr, mvStr;
-        iss >> rawStr >> mvStr;
-        
-        try {
-            reading.raw = std::stoi(rawStr);
-            // 去除 "mV" 后缀
-            if (mvStr.back() == 'V') mvStr.pop_back();
-            if (mvStr.back() == 'm') mvStr.pop_back();
-            reading.millivolts = std::stoi(mvStr);
-        } catch (...) {}
-    }
-    
-    return reading;
+    if (!resp.success) return {0, 0};
+    return parseADC(resp.payload, channelName(ch));
 }
 
 std::vector<ADCReading> IODock::adcReadAll() {
-    std::vector<ADCReading> readings(3, {0, 0});
     auto resp = sendCommand("ADC READALL");
-    
+    std::vector<ADCReading> readings(3, {0, 0});
     if (!resp.success) return readings;
-    
-    // 解析多行响应（简化处理）
-    std::istringstream iss(resp.payload);
+    bool seen[3] = {};
+    std::istringstream input(resp.payload);
     std::string line;
-    int idx = 0;
-    while (std::getline(iss, line) && idx < 3) {
-        std::istringstream lineStream(line);
-        std::string rawStr, mvStr;
-        lineStream >> rawStr >> mvStr;
-        
-        try {
-            readings[idx].raw = std::stoi(rawStr);
-            if (!mvStr.empty() && mvStr.back() == 'V') mvStr.pop_back();
-            if (!mvStr.empty() && mvStr.back() == 'm') mvStr.pop_back();
-            readings[idx].millivolts = std::stoi(mvStr);
-        } catch (...) {}
-        
-        idx++;
+    while (std::getline(input, line)) {
+        std::istringstream fields(line);
+        std::string channel;
+        fields >> channel;
+        if (channel.size() != 4 || channel.substr(0, 3) != "ADC" || channel[3] < '0' || channel[3] > '2')
+            throw std::runtime_error("Invalid ADC channel");
+        auto index = channel[3] - '0';
+        if (seen[index]) throw std::runtime_error("Duplicate ADC channel");
+        readings[index] = parseADC(line, channel);
+        seen[index] = true;
     }
-    
+    if (!seen[0] || !seen[1] || !seen[2]) throw std::runtime_error("Missing ADC channel");
     return readings;
 }
 
@@ -654,7 +692,9 @@ float IODock::adcReadTemp() {
     
     // 解析 "27.3C" 格式
     std::string tempStr = resp.payload;
-    if (tempStr.back() == 'C') tempStr.pop_back();
+    if (!std::regex_match(tempStr, std::regex(R"(-?[0-9]+(\.[0-9]+)?C)")))
+        throw std::runtime_error("Malformed temperature response");
+    tempStr.pop_back();
     
     try {
         return std::stof(tempStr);
@@ -707,146 +747,153 @@ void IODock::seqDelete(const std::string& name) {
 // ---------- 事件处理 ----------
 
 void IODock::onEvent(EventCallback callback) {
-    eventCallback_ = callback;
+    std::lock_guard<std::mutex> lock(mutex_);
+    eventCallback_ = std::move(callback);
 }
 
 void IODock::startEventListener() {
+    if (callbackDock == this) return;
+    std::lock_guard<std::mutex> lifecycleLock(listenerMutex_);
     if (listening_) return;
-    
+    if (eventThread_.joinable()) eventThread_.join();
     listening_ = true;
     eventThread_ = std::thread([this]() {
-        while (listening_ && isOpen()) {
+        callbackDock = this;
+        while (listening_) {
+            EventCallback callback;
             std::string line;
             {
-                std::lock_guard<std::mutex> lock(mutex_);
-                if (serial_) {
-                    line = serial_->readLine(100);
-                }
+                std::unique_lock<std::mutex> lock(mutex_);
+                eventReady_.wait(lock, [this] { return !listening_ || !events_.empty(); });
+                if (!listening_) break;
+                line = std::move(events_.front());
+                events_.pop_front();
+                callback = eventCallback_;
             }
-            
-            if (!line.empty()) {
-                // 检查是否是事件
-                if (line.substr(0, 4) == "EVT ") {
-                    auto spacePos = line.find(' ', 4);
-                    if (spacePos != std::string::npos) {
-                        std::string event = line.substr(4, spacePos - 4);
-                        std::string data = line.substr(spacePos + 1);
-                        
-                        if (eventCallback_) {
-                            eventCallback_(event, data);
-                        }
-                    }
-                }
-            }
+            if (!callback) continue;
+            auto start = line.compare(0, 4, "EVT ") == 0 ? 4u : 0u;
+            auto end = line.find(' ', start);
+            try { callback(line.substr(start, end - start),
+                           end == std::string::npos ? "" : line.substr(end + 1)); }
+            catch (...) { /* User callbacks must not terminate the receiver. */ }
         }
+        callbackDock = nullptr;
     });
 }
 
 void IODock::stopEventListener() {
-    listening_ = false;
-    if (eventThread_.joinable()) {
-        eventThread_.join();
+    if (callbackDock == this) {
+        listening_ = false; eventReady_.notify_all(); return;
     }
+    std::lock_guard<std::mutex> lifecycleLock(listenerMutex_);
+    listening_ = false;
+    eventReady_.notify_all();
+    if (eventThread_.joinable()) eventThread_.join();
 }
 
-// ---------- 工具函数 ----------
-
 Response IODock::sendCommand(const std::string& cmd) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    
-    Response resp;
-    resp.success = false;
-    resp.command = cmd;
-    resp.errorCode = 0;
-    
-    if (!serial_ || !serial_->isOpen()) {
-        resp.error = "串口未打开";
-        return resp;
+    std::lock_guard<std::mutex> commandLock(commandMutex_);
+    Response resp{false, cmd, "", "", -1};
+    std::unique_lock<std::mutex> lock(mutex_);
+    if (!receiving_ || !serial_) { resp.error = "Serial port is closed"; return resp; }
+    if (!synchronized_) { resp.error = "Response synchronization lost; close and reopen"; return resp; }
+    if (cmd.empty() || cmd.find_first_of("\r\n") != std::string::npos) {
+        resp.error = "Expected one command line"; return resp;
     }
-    
-    // 清空接收缓冲
-    serial_->flush();
-    
-    // 发送命令
-    std::string fullCmd = cmd + "\n";
-    if (serial_->write(fullCmd) != fullCmd.size()) {
-        resp.error = "发送失败";
-        return resp;
+    std::istringstream words(cmd);
+    std::string name, sub;
+    words >> name;
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return std::toupper(c); });
+    if (name == "IO" || name == "PWM" || name == "UART" || name == "I2C" ||
+        name == "SPI" || name == "ADC" || name == "SEQ" || name == "BIN" || name == "CFG") {
+        words >> sub;
+        std::transform(sub.begin(), sub.end(), sub.begin(), [](unsigned char c) { return std::toupper(c); });
+        if (!sub.empty()) name += " " + sub;
     }
-    
-    // 读取响应（可能多行）
-    std::string line = serial_->readLine(1000);
-    if (line.empty()) {
-        resp.error = "响应超时";
-        return resp;
+    const bool multiline = name == "INFO" || name == "IO READALL" || name == "ADC READALL" || name == "I2C SCAN" || name == "HELP";
+    if (!responses_.empty()) {
+        synchronized_ = false; resp.error = "Unsolicited response; close and reopen"; return resp;
     }
-    
-    return parseResponse(line);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    const auto wire = cmd + "\n";
+    size_t sent = 0;
+    while (sent < wire.size()) {
+        int n = serial_->write(wire.substr(sent));
+        if (n <= 0 || std::chrono::steady_clock::now() >= deadline) {
+            synchronized_ = false; resp.error = "Serial write failed"; return resp;
+        }
+        sent += static_cast<size_t>(n);
+    }
+    bool header = false;
+    while (receiving_) {
+        if (!responseReady_.wait_until(lock, deadline, [this] { return !responses_.empty() || !receiving_; })) break;
+        if (!receiving_) break;
+        auto line = std::move(responses_.front()); responses_.pop_front();
+        if (!header) {
+            const auto ok = "OK " + name;
+            if (line == ok || line.compare(0, ok.size() + 1, ok + " ") == 0) {
+                resp.payload = line.size() > ok.size() ? line.substr(ok.size() + 1) : "";
+                if (!multiline) { resp.success = true; resp.errorCode = 0; return resp; }
+                header = true;
+            } else if (line.compare(0, 4, "ERR ") == 0) {
+                resp = parseResponse(line);
+                if (resp.command != name && resp.command != "LINE") {
+                    synchronized_ = false; resp.error = "Mismatched error response: " + line;
+                }
+                resp.command = cmd; return resp;
+            } else {
+                synchronized_ = false; resp.error = "Unexpected response: " + line; return resp;
+            }
+        } else if (line == "END") {
+            resp.success = true; resp.errorCode = 0; return resp;
+        } else {
+            if (line.compare(0, 4, "ERR ") == 0) {
+                resp = parseResponse(line); resp.command = cmd; synchronized_ = false; return resp;
+            }
+            if (!resp.payload.empty()) resp.payload += "\n";
+            resp.payload += line;
+        }
+    }
+    synchronized_ = false;
+    resp.error = receiving_ ? "Response timeout; close and reopen" : "Serial connection closed";
+    return resp;
 }
 
 Response IODock::parseResponse(const std::string& line) {
-    Response resp;
-    resp.success = false;
-    
-    if (line.substr(0, 3) == "OK ") {
-        resp.success = true;
-        resp.payload = line.substr(3);
-        
-        // 提取命令名
-        auto spacePos = resp.payload.find(' ');
-        if (spacePos != std::string::npos) {
-            resp.command = resp.payload.substr(0, spacePos);
-            resp.payload = resp.payload.substr(spacePos + 1);
+    Response resp{false, "", "", line, -1};
+    if (line.compare(0, 4, "ERR ") != 0) return resp;
+    std::istringstream iss(line.substr(4));
+    std::string token;
+    while (iss >> token) {
+        if (token.compare(0, 2, "E_") == 0) {
+            static const std::map<std::string, int> codes = {
+                {"E_BADCMD",0},{"E_PARAM",1},{"E_NOTFOUND",2},{"E_RANGE",3},
+                {"E_CFG",4},{"E_BUSY",5},{"E_TIMEOUT",6},{"E_NACK",7},
+                {"E_OVERRUN",8},{"E_IO",9},{"E_LONG",10},{"E_DENIED",11}};
+            auto found = codes.find(token);
+            if (found != codes.end()) resp.errorCode = found->second;
+            std::string message;
+            std::getline(iss, message);
+            resp.error = token + message;
+            break;
         }
-    } else if (line.substr(0, 4) == "ERR ") {
-        resp.success = false;
-        std::string content = line.substr(4);
-        
-        // 解析 "CMD E_CODE message" 格式
-        std::istringstream iss(content);
-        iss >> resp.command;
-        
-        std::string codeStr;
-        iss >> codeStr;
-        
-        // 错误码映射
-        static std::map<std::string, int> errorCodes = {
-            {"E_BADCMD", 0}, {"E_PARAM", 1}, {"E_NOTFOUND", 2},
-            {"E_RANGE", 3}, {"E_CFG", 4}, {"E_BUSY", 5},
-            {"E_TIMEOUT", 6}, {"E_NACK", 7}, {"E_OVERRUN", 8},
-            {"E_IO", 9}, {"E_LONG", 10}, {"E_DENIED", 11}
-        };
-        
-        auto it = errorCodes.find(codeStr);
-        if (it != errorCodes.end()) {
-            resp.errorCode = it->second;
-        }
-        
-        // 剩余部分作为错误信息
-        std::string msg;
-        std::getline(iss, msg);
-        resp.error = msg.empty() ? codeStr : msg;
-    } else {
-        // 可能是多行响应的第一行
-        resp.success = true;
-        resp.payload = line;
+        if (!resp.command.empty()) resp.command += " ";
+        resp.command += token;
     }
-    
     return resp;
 }
 
 std::vector<uint8_t> IODock::hexToBytes(const std::string& hex) {
-    std::vector<uint8_t> bytes;
-    
-    for (size_t i = 0; i + 1 < hex.size(); i += 2) {
-        std::string byteStr = hex.substr(i, 2);
-        try {
-            bytes.push_back(std::stoi(byteStr, nullptr, 16));
-        } catch (...) {
-            break;
-        }
+    std::string digits;
+    for (unsigned char c : hex) {
+        if (std::isspace(c)) continue;
+        if (!std::isxdigit(c)) throw std::runtime_error("Malformed HEX response");
+        digits += static_cast<char>(c);
     }
-    
+    if (digits.size() % 2) throw std::runtime_error("Odd HEX response length");
+    std::vector<uint8_t> bytes;
+    for (size_t i = 0; i < digits.size(); i += 2)
+        bytes.push_back(static_cast<uint8_t>(std::stoul(digits.substr(i, 2), nullptr, 16)));
     return bytes;
 }
 

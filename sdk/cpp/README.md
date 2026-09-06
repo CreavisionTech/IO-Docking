@@ -258,3 +258,30 @@ if (resp.success) {
 ## 协议参考
 
 完整协议文档见 `Doc/Host_Protocol.md`
+
+## 接收线程与响应语义（2026-09 修复）
+
+公开方法、参数、默认值和返回结构保持源码兼容；内部对象布局改变，使用者需要重新编译链接。
+
+- `open()` 启动唯一串口接收线程。命令调用串行发送，并等待响应队列；不清空串口缓冲。分片行跨轮询超时保留，短写继续发送。
+- `EVT`、`DATA`、`DATA_END` 始终进入异步队列，不参与命令匹配。`onEvent` 的回调分别收到事件名、`DATA`、`DATA_END`；后两个的数据参数含通道及剩余内容。
+- `startEventListener()` 仅启动回调分发。回调在独立线程执行，可调用同步命令、替换回调或停止监听；回调异常被隔离。停止监听不停止接收，未分发的数据会保留到再次启动。长时间数据流应保持回调消费，未消费队列会增长。
+- `INFO`、`HELP`、`IO READALL`、`ADC READALL`、`I2C SCAN` 一直收集至 `END`。`Response.command` 保留调用者原始命令；`payload` 去掉完整命令前缀和 `END`，多行内容以换行分隔。
+- 成功时 `errorCode=0`；固件已知错误仍用原有映射；未知错误、传输错误和超时为 `-1`。多级命令错误能正确提取 `E_*`。
+- 命令总等待期限为 1 秒。超时、传输失败或错配会禁止后续命令，需 `close()` 后重新 `open()`。文本协议没有请求 ID，不能安全地把迟到响应当成下一条命令的结果；重新连接应在设备旧命令已结束后进行。
+- ADC、IO、PWM、温度及 HEX 的畸形成功响应会抛出解析异常，避免返回部分解析或伪造读数。固件 ERR 时各高层方法的原有默认返回行为仍保留；需要详细失败原因时使用 `sendCommand()`。
+- `pwmConfig(..., false)` 使用 `#raw` 明确指定原始占空比（需要支持此语法的固件）；I2C 写数据使用连续 HEX；修复 PWM SYNC 首个通道前缺空格。
+
+连接生命周期（`open/close`）由调用者串行管理；可从多个工作线程调用命令，`close()` 可取消等待中的命令。不要在自身回调内销毁 IODock 对象。连续流无需新增读取 API，使用现有 `onEvent()` 消费。
+
+## 离线回归测试
+
+```bash
+cmake -S . -B build-offline -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-offline
+ctest --test-dir build-offline --output-on-failure
+```
+
+测试通过编译期替换底层 open/read/write，使用内存模拟串口；生产组行、接收线程、命令匹配和高层 API 都参与测试。不会枚举或打开真实串口。生产库不启用这个替换；`demo` 仅构建，测试不会运行它。仅构建 SDK 时可传 `-DBUILD_TESTING=OFF`。
+
+详细验证见 [VALIDATION.md](VALIDATION.md)。

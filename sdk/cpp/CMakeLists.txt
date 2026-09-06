@@ -30,3 +30,11 @@ install(TARGETS iodock
 )
 install(FILES iodock.h DESTINATION include)
 install(TARGETS demo RUNTIME DESTINATION bin)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(iodock_offline_tests tests/offline.cpp)
+    target_link_libraries(iodock_offline_tests PRIVATE Threads::Threads)
+    add_test(NAME iodock_offline COMMAND iodock_offline_tests)
+    set_tests_properties(iodock_offline PROPERTIES TIMEOUT 30)
+endif()

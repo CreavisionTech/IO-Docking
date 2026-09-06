@@ -16,6 +16,10 @@ IO Docking Board Python SDK
 
 import serial
 import time
+import queue
+import re
+import logging
+import math
 import threading
 from typing import List, Dict, Tuple, Optional, Callable
 from dataclasses import dataclass
@@ -125,6 +129,8 @@ class IODock:
             baudrate: 波特率（默认 115200，CDC 下不影响实际速率）
             timeout: 读取超时（秒）
         """
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("timeout 必须为有限正数")
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
@@ -134,6 +140,15 @@ class IODock:
         self._event_callback: Optional[Callable] = None
         self._listening = False
         self._listen_thread: Optional[threading.Thread] = None
+        self._command_lock = threading.Lock()
+        self._state_lock = threading.RLock()
+        self._lifecycle_lock = threading.Lock()
+        self._pending = None
+        self._failure = None
+        self._stop = threading.Event()
+        self._callbacks = queue.Queue()
+        self._data_callback = None
+        self._reader_thread = None
     
     # ========================================================================
     # 连接管理
@@ -146,33 +161,55 @@ class IODock:
         Returns:
             是否成功
         """
-        try:
-            self.serial = serial.Serial(
-                port=self.port,
-                baudrate=self.baudrate,
-                timeout=self.timeout,
-                bytesize=serial.EIGHTBITS,
-                parity=serial.PARITY_NONE,
-                stopbits=serial.STOPBITS_ONE
-            )
-            # 清空缓冲区
-            self.serial.reset_input_buffer()
-            self.serial.reset_output_buffer()
-            return True
-        except Exception as e:
-            print(f"打开串口失败: {e}")
-            return False
-    
+        with self._command_lock, self._lifecycle_lock, self._state_lock:
+            if self.is_open():
+                return self._failure is None
+            try:
+                self.serial = serial.Serial(
+                    port=self.port, baudrate=self.baudrate,
+                    timeout=0.05, write_timeout=self.timeout,
+                    bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE,
+                    stopbits=serial.STOPBITS_ONE)
+                self.serial.reset_input_buffer()
+                self.serial.reset_output_buffer()
+                self._failure = None
+                self._stop = threading.Event()
+                self._callbacks = queue.Queue()
+                self._reader_thread = threading.Thread(
+                    target=self._receive_loop,
+                    args=(self.serial, self._stop), daemon=True)
+                self._listen_thread = threading.Thread(
+                    target=self._callback_loop,
+                    args=(self._callbacks, self._stop), daemon=True)
+                self._reader_thread.start()
+                self._listen_thread.start()
+                return True
+            except Exception:
+                if self.serial is not None:
+                    self.serial.close()
+                self.serial = None
+                return False
+
     def close(self):
-        """关闭连接"""
-        self.stop_event_listener()
-        if self.serial and self.serial.is_open:
-            self.serial.close()
-            self.serial = None
-    
+        """关闭连接并唤醒正在等待响应的调用。"""
+        with self._lifecycle_lock:
+            with self._state_lock:
+                self._stop.set()
+                self._fail("串口已关闭")
+                connection = self.serial
+                self.serial = None
+                self._listening = False
+                self._callbacks.put(None)
+            if connection is not None:
+                connection.close()
+            if self._reader_thread is not None:
+                self._reader_thread.join(timeout=1.0)
+            # 不等待用户回调：回调可以安全地调用 close/open/send_command。
+
     def is_open(self) -> bool:
         """检查连接状态"""
-        return self.serial is not None and self.serial.is_open
+        with self._state_lock:
+            return self.serial is not None and self.serial.is_open
     
     def ping(self) -> bool:
         """
@@ -201,11 +238,8 @@ class IODock:
         if not resp.success:
             return info
         
-        for line in resp.payload.split('\n'):
-            line = line.strip()
-            if '=' in line:
-                key, val = line.split('=', 1)
-                info[key.strip()] = val.strip()
+        for key, val in re.findall(r'(\w+)=([^\s]+)', resp.payload):
+            info[key] = val
         
         return info
     
@@ -299,33 +333,23 @@ class IODock:
             电平状态
         """
         resp = self.send_command(f"IO READ {ch}")
-        if resp.success and "HIGH" in resp.payload:
-            return Level.HIGH
-        return Level.LOW
-    
-    def io_read_all(self) -> List[Level]:
-        """
-        读取全部 IO 状态
-        
-        Returns:
-            6 个通道的电平列表
-        """
-        levels = [Level.LOW] * 6
-        resp = self.send_command("IO READALL")
-        
         if not resp.success:
-            return levels
-        
-        # 解析 "IO1 HIGH IO2 LOW ..." 格式
-        for i in range(6):
-            key = f"IO{i+1}"
-            if key in resp.payload:
-                pos = resp.payload.find(key)
-                if "HIGH" in resp.payload[pos:]:
-                    levels[i] = Level.HIGH
-        
-        return levels
-    
+            raise RuntimeError(resp.error)
+        match = re.fullmatch(re.escape(ch.upper()) + r" (HIGH|LOW)", resp.payload)
+        if not match:
+            raise ValueError("无效 IO 响应: " + resp.payload)
+        return Level[match[1]]
+
+    def io_read_all(self) -> List[Level]:
+        """按 IO1..IO6 顺序读取全部通道。"""
+        resp = self.send_command("IO READALL")
+        if not resp.success:
+            raise RuntimeError(resp.error)
+        values = dict(re.findall(r"\b(IO[1-6]) (HIGH|LOW)\b", resp.payload))
+        if len(values) != 6:
+            raise ValueError("无效 IO READALL 响应: " + resp.payload)
+        return [Level[values[f"IO{i}"]] for i in range(1, 7)]
+
     def io_toggle(self, ch: str):
         """
         翻转 IO 输出
@@ -450,8 +474,16 @@ class IODock:
             配置信息
         """
         resp = self.send_command(f"PWM READ {ch}")
-        # 简化处理，实际应解析响应
-        return PWMConfig(0, 0, False, False)
+        if not resp.success:
+            raise RuntimeError(resp.error)
+        match = re.fullmatch(re.escape(ch.upper()) +
+                             r" (\d+)Hz (\d+)% (running|stopped) pol=(invert|normal)",
+                             resp.payload)
+        if not match:
+            raise ValueError("无效 PWM 响应: " + resp.payload)
+        # 文本固件仅返回取整后的百分比；换算为近似 16 位值。
+        return PWMConfig(int(match[1]), (int(match[2]) * 65535 + 50) // 100,
+                         match[3] == "running", match[4] == "invert")
     
     def pwm_sync(self, channels: List[str]):
         """
@@ -495,12 +527,12 @@ class IODock:
     
     def pwm_tick_off(self, ch: str):
         """
-        关闭 PWM 定时回调
+        关闭全局 PWM 定时回调（ch 参数保留用于兼容）
         
         Args:
             ch: 通道名称
         """
-        self.send_command(f"PWM TICK {ch} OFF")
+        self.send_command("PWM TICK OFF")
     
     # ========================================================================
     # UART 控制（2路）
@@ -560,12 +592,11 @@ class IODock:
         if not resp.success:
             return b""
         
-        # 解析 HEX:xxxx 格式
-        if "HEX:" in resp.payload:
-            hex_str = resp.payload.split("HEX:")[1].strip()
-            return bytes.fromhex(hex_str)
-        return b""
-    
+        match = re.fullmatch(re.escape(ch.upper()) + r" HEX:([0-9A-Fa-f]*)", resp.payload)
+        if not match:
+            raise ValueError("无效 UART 响应: " + resp.payload)
+        return bytes.fromhex(match[1])
+
     def uart_flush(self, ch: str):
         """
         清空 UART 接收缓冲
@@ -630,7 +661,7 @@ class IODock:
             reg: 寄存器地址
             data: 数据字节
         """
-        hex_data = " ".join([f"0x{b:02X}" for b in data])
+        hex_data = data.hex().upper()
         self.send_command(f"I2C WRITE 0x{addr:02X} 0x{reg:02X} {hex_data}")
     
     def i2c_read_reg(self, addr: int, reg: int, count: int) -> bytes:
@@ -663,7 +694,7 @@ class IODock:
             addr: 从机地址
             data: 数据
         """
-        hex_data = " ".join([f"0x{b:02X}" for b in data])
+        hex_data = data.hex().upper()
         self.send_command(f"I2C WRONLY 0x{addr:02X} {hex_data}")
     
     def i2c_read(self, addr: int, count: int) -> bytes:
@@ -781,58 +812,39 @@ class IODock:
         resp = self.send_command(f"ADC READ {ch}")
         
         if not resp.success:
-            return ADCReading(0, 0)
-        
-        # 解析 "2048 1650mV" 格式
-        parts = resp.payload.split()
-        if len(parts) >= 2:
-            raw = int(parts[0])
-            mv_str = parts[1].replace("mV", "")
-            mv = int(mv_str)
-            return ADCReading(raw, mv)
-        
-        return ADCReading(0, 0)
-    
+            raise RuntimeError(resp.error)
+        values = self._adc_values(resp.payload)
+        if ch.upper() not in values:
+            raise ValueError("无效 ADC 响应: " + resp.payload)
+        return values[ch.upper()]
+
+    @staticmethod
+    def _adc_values(payload):
+        return {ch: ADCReading(int(raw), int(mv)) for ch, raw, mv in
+                re.findall(r"\b(ADC[0-2]) (\d+) (\d+)mV\b", payload)}
+
     def adc_read_all(self) -> List[ADCReading]:
-        """
-        读取全部 ADC 通道
-        
-        Returns:
-            3 个通道的读数列表
-        """
-        readings = [ADCReading(0, 0)] * 3
+        """按 ADC0..ADC2 顺序读取全部通道。"""
         resp = self.send_command("ADC READALL")
-        
         if not resp.success:
-            return readings
-        
-        # 解析多行响应
-        lines = resp.payload.split('\n')
-        for i, line in enumerate(lines[:3]):
-            parts = line.strip().split()
-            if len(parts) >= 2:
-                try:
-                    raw = int(parts[0])
-                    mv_str = parts[1].replace("mV", "")
-                    mv = int(mv_str)
-                    readings[i] = ADCReading(raw, mv)
-                except (ValueError, IndexError):
-                    pass
-        
-        return readings
-    
-    def adc_start_sample(self, ch: str, rate_hz: int, duration_ms: int = 0):
+            raise RuntimeError(resp.error)
+        values = self._adc_values(resp.payload)
+        if len(values) != 3:
+            raise ValueError("无效 ADC READALL 响应: " + resp.payload)
+        return [values[f"ADC{i}"] for i in range(3)]
+
+    def adc_start_sample(self, ch: str, rate_hz: int, duration_ms: int = 1000):
         """
         启动连续采样
         
         Args:
             ch: 通道名称
             rate_hz: 采样率（Hz）
-            duration_ms: 持续时间（毫秒，0=持续直到手动停止）
+            duration_ms: 持续时间（毫秒，1..1000000，默认1000）
         """
-        cmd = f"ADC SAMPLE {ch} {rate_hz}"
-        if duration_ms > 0:
-            cmd += f" {duration_ms}"
+        if not 1 <= duration_ms <= 1000000 or not 1 <= rate_hz <= 500000:
+            raise ValueError("采样率须为1..500000，时长须为1..1000000毫秒")
+        cmd = f"ADC SAMPLE {ch} {rate_hz} {duration_ms}"
         self.send_command(cmd)
     
     def adc_stop_sample(self, ch: str):
@@ -935,123 +947,163 @@ class IODock:
     # ========================================================================
     
     def on_event(self, callback: Callable[[str, str], None]):
+        """注册 EVT 回调，使用 start_event_listener 启用。"""
+        with self._state_lock:
+            self._event_callback = callback
+
+    def on_data(self, callback: Callable[[str, str], None]):
+        """注册数据回调，不受事件监听开关影响。
+
+        DATA ADC0 ... -> callback("ADC0", "...")；
+        DATA_END ADC0 -> callback("DATA_END", "ADC0")。
+        DATA_END 的第二参数保留标记后的完整文本。
         """
-        注册事件回调
-        
-        Args:
-            callback: 回调函数，参数为 (event_name, data)
-        """
-        self._event_callback = callback
-    
+        with self._state_lock:
+            self._data_callback = callback
+
     def start_event_listener(self):
-        """启动事件监听线程"""
-        if self._listening:
-            return
-        
-        self._listening = True
-        self._listen_thread = threading.Thread(target=self._listen_loop, daemon=True)
-        self._listen_thread.start()
-    
+        with self._state_lock:
+            self._listening = True
+
     def stop_event_listener(self):
-        """停止事件监听"""
-        self._listening = False
-        if self._listen_thread and self._listen_thread.is_alive():
-            self._listen_thread.join(timeout=1.0)
-            self._listen_thread = None
-    
-    def _listen_loop(self):
-        """事件监听循环"""
-        while self._listening and self.is_open():
+        """停止投递新事件；已经开始执行的回调不会被中断。"""
+        with self._state_lock:
+            self._listening = False
+
+    @staticmethod
+    def _callback_loop(callbacks, stop):
+        while True:
+            item = callbacks.get()
+            if item is None or stop.is_set():
+                return
+            callback, name, data = item
             try:
-                line = self.serial.readline().decode('utf-8', errors='ignore').strip()
-                
-                if line and line.startswith("EVT "):
-                    # 解析 "EVT NAME data" 格式
-                    parts = line[4:].split(" ", 1)
-                    if len(parts) == 2:
-                        event, data = parts
-                        if self._event_callback:
-                            self._event_callback(event, data)
+                callback(name, data)
             except Exception:
-                pass
-    
-    # ========================================================================
-    # 工具函数
-    # ========================================================================
-    
-    def send_command(self, cmd: str) -> Response:
-        """
-        发送命令并获取响应
-        
-        Args:
-            cmd: 命令字符串
-        
-        Returns:
-            响应对象
-        """
-        resp = Response(success=False, command=cmd, payload="")
-        
-        if not self.is_open():
-            resp.error = "串口未打开"
-            return resp
-        
+                logging.getLogger(__name__).exception("IODock callback failed")
+
+    def _fail(self, message):
+        # 调用方持有 _state_lock。协议没有请求 ID，故失步后必须重连。
+        self._failure = message
+        if self._pending is not None:
+            self._pending.put(("failure", message))
+
+    def _receive_loop(self, connection, stop):
+        buffer = bytearray()
         try:
-            # 清空接收缓冲
-            self.serial.reset_input_buffer()
-            
-            # 发送命令
-            full_cmd = cmd + "\n"
-            self.serial.write(full_cmd.encode('utf-8'))
-            
-            # 读取响应
-            line = self.serial.readline().decode('utf-8', errors='ignore').strip()
-            
-            if not line:
-                resp.error = "响应超时"
-                return resp
-            
-            return self._parse_response(line)
-            
-        except Exception as e:
-            resp.error = str(e)
-            return resp
-    
+            while not stop.is_set():
+                chunk = connection.read(max(1, min(connection.in_waiting, 4096)))
+                if not chunk:
+                    continue
+                buffer.extend(chunk)
+                while b"\n" in buffer:
+                    raw, _, rest = buffer.partition(b"\n")
+                    buffer = bytearray(rest)
+                    line = raw.decode("utf-8", errors="replace").strip()
+                    if not line:
+                        continue
+                    with self._state_lock:
+                        if stop.is_set():
+                            return
+                        if line == "DATA_END" or line.startswith("DATA_END "):
+                            if self._data_callback:
+                                self._callbacks.put((self._data_callback, "DATA_END",
+                                                     line.partition(" ")[2]))
+                        elif line.startswith(("EVT ", "DATA ")):
+                            kind, _, content = line.partition(" ")
+                            name, _, data = content.partition(" ")
+                            callback = (self._event_callback if self._listening else None) \
+                                if kind == "EVT" else self._data_callback
+                            if callback:
+                                self._callbacks.put((callback, name, data))
+                        elif self._pending is not None:
+                            self._pending.put(("line", line))
+        except Exception as exc:
+            with self._state_lock:
+                if not stop.is_set():
+                    self._fail("串口读取失败: " + str(exc))
+
+    _MULTILINE = {"INFO", "HELP", "IO READALL", "ADC READALL", "I2C SCAN"}
+    _GROUPS = {"IO", "PWM", "UART", "I2C", "SPI", "ADC", "SEQ", "CFG", "BIN"}
+
+    @classmethod
+    def _command_name(cls, cmd):
+        words = cmd.upper().split()
+        return " ".join(words[:2] if words[0] in cls._GROUPS else words[:1])
+
+    def send_command(self, cmd: str) -> Response:
+        """串行执行完整事务。失败/超时后须 close/open 才能继续。"""
+        if not cmd.strip() or any(c in cmd for c in "\r\n\0"):
+            raise ValueError("命令必须是非空单行文本")
+        if len(cmd.encode("utf-8")) > 511:
+            raise ValueError("命令超过511字节")
+        name = self._command_name(cmd)
+        if name == "BIN ENTER":
+            raise ValueError("本 SDK 仅支持文本协议")
+        with self._command_lock:
+            pending = queue.Queue()
+            with self._state_lock:
+                if not self.is_open() or self._failure:
+                    return Response(False, cmd, "", self._failure or "串口未打开", 9)
+                self._pending = pending
+                connection = self.serial
+            deadline = time.monotonic() + self.timeout
+            try:
+                wire = (cmd + "\n").encode("utf-8")
+                if connection.write(wire) != len(wire):
+                    raise OSError("串口写入不完整")
+                response = None
+                lines = []
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise queue.Empty
+                    kind, line = pending.get(timeout=remaining)
+                    if kind == "failure":
+                        return Response(False, cmd, "", line, 9)
+                    if response is None:
+                        response = self._parse_response(line)
+                        # unknown command 错误只回显第一个命令词。
+                        if response.command != name and not (
+                                not response.success and response.error_code == 0
+                                and response.command == name.split()[0]):
+                            raise ValueError("响应命令不匹配: " + line)
+                        response.command = cmd
+                        if not response.success or name not in self._MULTILINE:
+                            return response
+                        if response.payload:
+                            lines.append(response.payload)
+                    elif line == "END":
+                        response.payload = "\n".join(lines)
+                        return response
+                    elif line.startswith(("OK ", "ERR ")):
+                        raise ValueError("多行响应缺少 END")
+                    else:
+                        lines.append(line)
+            except queue.Empty:
+                with self._state_lock:
+                    self._fail("响应超时；请关闭并重新打开连接")
+                return Response(False, cmd, "", self._failure, 6)
+            except Exception as exc:
+                with self._state_lock:
+                    self._fail(str(exc) + "；请关闭并重新打开连接")
+                return Response(False, cmd, "", self._failure, 9)
+            finally:
+                with self._state_lock:
+                    self._pending = None
+
     def _parse_response(self, line: str) -> Response:
-        """解析响应行"""
-        resp = Response(success=False, command="", payload="")
-        
-        if line.startswith("OK "):
-            resp.success = True
-            resp.payload = line[3:]
-            
-            # 提取命令名
-            parts = resp.payload.split(" ", 1)
-            if len(parts) > 1:
-                resp.command = parts[0]
-                resp.payload = parts[1]
-            else:
-                resp.command = resp.payload
-                resp.payload = ""
-                
-        elif line.startswith("ERR "):
-            resp.success = False
-            content = line[4:]
-            
-            # 解析 "CMD E_CODE message" 格式
-            parts = content.split(" ", 2)
-            if len(parts) >= 2:
-                resp.command = parts[0]
-                code_str = parts[1]
-                resp.error_code = self.ERROR_CODES.get(code_str, -1)
-                resp.error = parts[2] if len(parts) > 2 else code_str
-            else:
-                resp.error = content
-        else:
-            # 可能是多行响应
-            resp.success = True
-            resp.payload = line
-        
-        return resp
+        """解析标准版单/双词命令头与符号错误码。"""
+        if line.startswith("ERR "):
+            match = re.fullmatch(r"ERR (.+?) (E_[A-Z_]+)(?: (.*))?", line)
+            if match:
+                return Response(False, match[1], "", match[3] or match[2],
+                                self.ERROR_CODES.get(match[2], -1))
+        elif line.startswith("OK "):
+            content = line[3:]
+            name = self._command_name(content)
+            return Response(True, name, content[len(name):].strip())
+        raise ValueError("无效响应: " + line)
 
 
 # ============================================================================

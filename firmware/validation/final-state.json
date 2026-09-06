@@ -1,0 +1,26 @@
+{
+  "port": "COM43",
+  "info": [
+    "OK INFO",
+    "board=IO-Dock",
+    "mcu=RP2040",
+    "fw=0.1.4",
+    "uid=d665bc31023b1c16",
+    "clk=125000000",
+    "io=6 pwm=4 uart=2 i2c=1 spi=1 adc=3",
+    "END"
+  ],
+  "pwm": [
+    "OK PWM READ PWM1 0Hz 0% stopped pol=normal",
+    "OK PWM READ PWM2 0Hz 0% stopped pol=normal",
+    "OK PWM READ PWM3 0Hz 0% stopped pol=normal",
+    "OK PWM READ PWM4 0Hz 0% stopped pol=normal"
+  ],
+  "saved_configuration": "ERR LOAD E_NOTFOUND no valid saved config",
+  "final_state": "reset defaults; IO inputs, PWM stopped, ADC/SEQ idle, text mode",
+  "sha256": {
+    "firmware/build/io_dock.uf2": "ca07e92468a2ade0a0463dfb638d32e429cab2dd2757c89642b3e3a5bb8438cd",
+    "firmware/io_dock.uf2": "ca07e92468a2ade0a0463dfb638d32e429cab2dd2757c89642b3e3a5bb8438cd",
+    "IO-Docking/firmware/io_dock-v0.1.4.uf2": "ca07e92468a2ade0a0463dfb638d32e429cab2dd2757c89642b3e3a5bb8438cd"
+  }
+}
