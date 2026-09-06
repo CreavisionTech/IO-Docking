@@ -1,8 +1,31 @@
-# IO Dock · 面向电脑的 IO 扩展坞
+<h1 align="center">IO Dock</h1>
 
-当前标准固件为 **0.1.4**：[下载 UF2](firmware/io_dock-v0.1.4.uf2)。本轮修复 ADC 采样时序、Flash 双核安全、序列循环/等待、PWM、协议参数校验与上位机并发收发。
-Python/C++ SDK 同步修复。标准版为 6 IO / 4 PWM / 2 UART / I2C / SPI / 3 ADC；不兼容 14 IO 定制版的引脚布局。
-升级后旧持久化参数不自动恢复，需重新配置并保存。实测二进制 100 kSPS 连续 5 秒完整回传；250/500 kSPS 有过载损失并报告事件，不保证最高速无损。
+<p align="center">
+  <strong>面向电脑的 IO 扩展坞</strong><br>
+  一根 USB 线，让电脑连接传感器、控制外设、编排时序。
+</p>
+
+<p align="center">
+  <a href="assets/io-dock-board.png">
+    <img src="assets/io-dock-board.png" alt="IO Dock 实物：白色外壳内的绿色 RP2040 板卡，配有 USB-C 接口、按键与外设排针" width="820">
+  </a>
+</p>
+
+<p align="center"><sub>IO Dock 实物 · RP2040 主控 · USB-C 连接</sub></p>
+
+<p align="center">
+  <a href="https://creavisiontech.github.io/IO-Docking/"><strong>在线控制台</strong></a>
+  &nbsp; · &nbsp;
+  <a href="firmware/io_dock-v0.1.4.uf2">下载固件 v0.1.4</a>
+  &nbsp; · &nbsp;
+  <a href="Doc/Host_Protocol.md">协议文档</a>
+  &nbsp; · &nbsp;
+  <a href="sdk/python/README.md">Python SDK</a>
+  &nbsp; · &nbsp;
+  <a href="sdk/cpp/README.md">C++ SDK</a>
+</p>
+
+---
 
 IO Dock 是一款**即插即用的电脑外设扩展坞**。它通过一根 USB 线接入电脑,变成一个**免驱动的虚拟串口**,让您无需任何硬件或嵌入式开发经验,只用几条简单的文本命令就能:
 
@@ -31,6 +54,17 @@ IO Dock 是一款**即插即用的电脑外设扩展坞**。它通过一根 USB 
 > 完整命令与参数范围见 [协议手册](#协议)。
 
 源码与构建见 [固件 README](firmware/README.md)，修复清单与实机边界见 [验证报告](firmware/validation/REPORT.md)。
+
+<details>
+<summary><strong>标准固件 v0.1.4 · 更新与升级说明</strong></summary>
+
+当前标准固件为 **0.1.4**：[下载 UF2](firmware/io_dock-v0.1.4.uf2)。本轮修复 ADC 采样时序、Flash 双核安全、序列循环/等待、PWM、协议参数校验与上位机并发收发，Python/C++ SDK 同步修复。
+
+标准版为 6 IO / 4 PWM / 2 UART / I2C / SPI / 3 ADC，不兼容 14 IO 定制版的引脚布局。升级后旧持久化参数不自动恢复，需重新配置并保存。
+
+实测二进制 100 kSPS 连续 5 秒完整回传；250/500 kSPS 有过载损失并报告事件，不保证最高速无损。
+
+</details>
 
 ## 快速上手
 
