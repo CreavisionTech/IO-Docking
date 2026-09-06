@@ -18,6 +18,8 @@
 #include <thread>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <deque>
 
 namespace iodock {
 
@@ -522,7 +524,15 @@ private:
     std::string port_;
     uint32_t baud_;
     SerialPort* serial_;
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
+    std::mutex commandMutex_;
+    std::mutex listenerMutex_;
+    std::condition_variable responseReady_, eventReady_;
+    std::thread readerThread_;
+    std::atomic<bool> receiving_{false};
+    bool synchronized_ = true;
+    std::deque<std::string> responses_, events_;
+    void receiveLoop();
     
     // 事件监听
     EventCallback eventCallback_;

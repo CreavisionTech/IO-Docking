@@ -1,0 +1,7 @@
+{
+  "passed": true,
+  "concurrent_pings": 200,
+  "adc_samples": 5000,
+  "pwm_events": 5,
+  "multiline_and_error_parsing": true
+}

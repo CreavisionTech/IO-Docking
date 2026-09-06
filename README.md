@@ -1,5 +1,9 @@
 # IO Dock · 面向电脑的 IO 扩展坞
 
+当前标准固件为 **0.1.4**：[下载 UF2](firmware/io_dock-v0.1.4.uf2)。本轮修复 ADC 采样时序、Flash 双核安全、序列循环/等待、PWM、协议参数校验与上位机并发收发。
+Python/C++ SDK 同步修复。标准版为 6 IO / 4 PWM / 2 UART / I2C / SPI / 3 ADC；不兼容 14 IO 定制版的引脚布局。
+升级后旧持久化参数不自动恢复，需重新配置并保存。实测二进制 100 kSPS 连续 5 秒完整回传；250/500 kSPS 有过载损失并报告事件，不保证最高速无损。
+
 IO Dock 是一款**即插即用的电脑外设扩展坞**。它通过一根 USB 线接入电脑,变成一个**免驱动的虚拟串口**,让您无需任何硬件或嵌入式开发经验,只用几条简单的文本命令就能:
 
 - 控制数字 IO —— 输入/输出、脉冲、电平翻转、边沿事件上报
@@ -26,6 +30,8 @@ IO Dock 是一款**即插即用的电脑外设扩展坞**。它通过一根 USB 
 
 > 完整命令与参数范围见 [协议手册](#协议)。
 
+源码与构建见 [固件 README](firmware/README.md)，修复清单与实机边界见 [验证报告](firmware/validation/REPORT.md)。
+
 ## 快速上手
 
 ### 1. 连接
@@ -46,7 +52,7 @@ IO Dock 是一款**即插即用的电脑外设扩展坞**。它通过一根 USB 
 
 ```
 > PING
-OK PING PONG 0.1.3
+OK PING PONG 0.1.4
 > IO CFG IO1 OUT
 OK IO CFG
 > IO WRITE IO1 HIGH
@@ -82,7 +88,7 @@ OK SEQ RUN
 | [protocol/protocol_bin.html](protocol/protocol_bin.html) | 二进制协议交互式手册 |
 | [demo/demo_mpu6050_iic.html](demo/demo_mpu6050_iic.html) | 示例:通过 I2C 实时读取 MPU6050 六轴数据并绘制曲线 |
 | [demo/demo_lvi_handle.html](demo/demo_lvi_handle.html) | 示例:LIV 手持设备的定时同步(多路 PWM 相位对齐) |
-| [firmware/io_dock-v0.1.uf2](firmware/io_dock-v0.1.uf2) | 预编译固件 |
+| [firmware/io_dock-v0.1.4.uf2](firmware/io_dock-v0.1.4.uf2) | 预编译固件 |
 
 ## 烧录固件
 
@@ -94,7 +100,7 @@ OK SEQ RUN
 - **串口命令**:在串口发送 `BOOTLOADER` 命令。
 - **物理方式**:按住板载 BOOT 键上电。
 
-板卡进入烧写模式后会枚举为一个 U 盘。把 [firmware/io_dock-v0.1.uf2](firmware/io_dock-v0.1.uf2) 拖入该 U 盘,板卡自动重启,烧录完成。
+板卡进入烧写模式后会枚举为一个 U 盘。把 [firmware/io_dock-v0.1.4.uf2](firmware/io_dock-v0.1.4.uf2) 拖入该 U 盘,板卡自动重启,烧录完成。
 
 ## 典型场景
 
@@ -106,4 +112,4 @@ OK SEQ RUN
 
 ---
 
-固件版本:v0.1 · [CreavisionTech/IO-Docking](https://github.com/CreavisionTech/IO-Docking)
+固件版本:v0.1.4 · [CreavisionTech/IO-Docking](https://github.com/CreavisionTech/IO-Docking)

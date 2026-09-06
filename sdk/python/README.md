@@ -229,8 +229,47 @@ else:
 2. **波特率**：USB CDC 虚拟串口波特率不影响实际通信速率
 3. **行缓冲**：单行命令最大 512 字节
 4. **线程安全**：SDK 内部使用线程锁，支持多线程调用
-5. **事件监听**：需要单独线程运行，回调在监听线程中执行
+5. **事件监听**：需要单独线程运行，回调在独立的回调线程中执行，串口始终由唯一接收线程读取
 
 ## 协议参考
 
 完整协议文档见 `Doc/Host_Protocol.md`
+
+
+## 标准版协议与离线回归
+
+`open()` 启动唯一串口接收线程；命令以完整事务加锁串行执行。接收线程分发
+响应、`EVT` 和 `DATA`，INFO、HELP、IO/ADC READALL、I2C SCAN 等待 `END`
+后返回。`Response.command` 保留原始请求，`payload` 去除完整命令头及 END。
+INFO 同一行中的多个键值对也会分别解析。
+
+事件回调使用 `on_event()` 注册并由 `start_event_listener()` 启用；
+`stop_event_listener()` 只停止投递新事件，不停止接收响应。
+使用 `dock.on_data(lambda stream, data: print(stream, data))` 接收 DATA；
+名称约定：`DATA ADC0 ...` 调用 `callback("ADC0", "...")`，
+`DATA_END ADC0` 调用 `callback("DATA_END", "ADC0")`；结束标记的第二参数
+保留 `DATA_END` 后的完整文本（无参数时为空字符串）。DATA_END 单独分发，
+即使未注册回调也不会进入命令响应或多行响应正文。
+该回调无需开启事件监听。未注册回调的数据会被消费而不进入命令响应。
+回调按接收顺序在独立线程执行，可发送命令；回调异常记录到日志。
+回调应及时返回，避免积压。close 不等待已经执行中的用户回调。
+
+协议无请求 ID。响应超时、串口故障或响应失配后，后续命令返回失败，
+需 `close()` / `open()` 重新连接；SDK 不自动重发可能有副作用的命令。
+固件正常 ERR 响应不会使连接失效。输入必须是单行文本，最长511个UTF-8字节；
+SDK 不支持通过 `BIN ENTER` 切换二进制模式。
+
+IO、ADC 和 PWM 读取遇到设备错误会抛出 RuntimeError，响应格式或通道不符
+会抛出 ValueError，避免把失败误报成低电平或零值。
+PWMConfig.duty 保持0..65535单位，但固件仅返回整数百分比，换算值是近似值。
+`pwm_tick_off(ch)` 发送全局 `PWM TICK OFF`；ch 保留以兼容原接口。
+标准版 ADC SAMPLE 必须指定正时长；`adc_start_sample` 默认1000毫秒，
+范围1..1000000毫秒，不支持0表示无限采样。
+
+在项目根目录执行（需要 requirements.txt 中的 pyserial）：
+
+```bash
+python -m unittest discover -s sdk/python -p test_iodock.py -v
+```
+
+测试全程替换 `serial.Serial` 为内存模拟串口，不枚举或连接硬件。

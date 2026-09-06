@@ -1,0 +1,52 @@
+连接 COM43 ...
+TEST  PING
+  PASS  PING
+TEST  INFO
+  PASS  INFO
+TEST  LED
+  PASS  LED
+TEST  IO 配置/写/读/翻转/脉冲/读全部
+  PASS  IO 配置/写/读/翻转/脉冲/读全部
+TEST  IO 输入配置 + 事件配置(需外部激励才能看到事件)
+    [注] GPIO 中断事件需外部接线触发,此处仅验证配置命令
+  PASS  IO 输入配置 + 事件配置(需外部激励才能看到事件)
+TEST  PWM 配置/读取/启动/占空比/停止
+  PASS  PWM 配置/读取/启动/占空比/停止
+TEST  PWM 跨片相位 PWM_PHASE/SYNC
+  PASS  PWM 跨片相位 PWM_PHASE/SYNC
+TEST  PWM 在线微调 PHADJ + 极性 POL
+  PASS  PWM 在线微调 PHADJ + 极性 POL
+TEST  UART 配置/发送/统计/缓冲
+  PASS  UART 配置/发送/统计/缓冲
+TEST  UART 回环 + 接收事件(需 TX-RX 短接,未接则跳过)
+  SKIP  UART 回环 + 接收事件(需 TX-RX 短接,未接则跳过): 仅 USB，未连接 USART1 TX-RX 回环
+TEST  I2C 速率 + 扫描(无设备则空)
+    [INFO] 扫描到: 无设备(空总线)
+  PASS  I2C 速率 + 扫描(无设备则空)
+TEST  I2C 读(无设备应 NACK)
+    [INFO] 无设备,正确返回 NACK
+  PASS  I2C 读(无设备应 NACK)
+TEST  SPI 配置/全双工/CS
+    [INFO] SPI XFR 返回: OK SPI XFR HEX:00000000
+  PASS  SPI 配置/全双工/CS
+TEST  ADC 单次读取 0/1/2 + 全部 + 温度
+    [INFO] 温度: 46.755C
+  PASS  ADC 单次读取 0/1/2 + 全部 + 温度
+TEST  ADC 连续采样流(DATA/DATA_END)
+    [OK] 299 个 DATA 帧 + DATA_END
+  PASS  ADC 连续采样流(DATA/DATA_END)
+TEST  ADC 阈值配置
+  PASS  ADC 阈值配置
+TEST  SEQ 定义/列表/显示/运行/完成事件
+  PASS  SEQ 定义/列表/显示/运行/完成事件
+TEST  二进制模式: 切换 + PING/INFO
+  PASS  二进制模式: 切换 + PING/INFO
+TEST  二进制模式: IO 配置/写/读
+  PASS  二进制模式: IO 配置/写/读
+TEST  二进制模式: PWM/ADC
+    [INFO] 温度传感器: 46.755 °C
+  PASS  二进制模式: PWM/ADC
+TEST  二进制模式: 退出回文本
+  PASS  二进制模式: 退出回文本
+
+==== 结果: 20 通过, 0 失败, 1 跳过 ====
