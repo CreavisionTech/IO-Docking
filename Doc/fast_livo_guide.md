@@ -37,8 +37,7 @@
 ## 3. 网页操作（推荐顺序：连接 → 校时 → 配置启动 → 可选开机运行）
 
 打开同步任务页 `web/timing.html`（仓库内可用 `python -m http.server` 后访问
-`http://localhost:8000/web/timing.html`；在线版为
-`https://creavisiontech.github.io/IO-Docking/timing.html`）。**请用 Chrome/Edge**，不要用
+`http://localhost:8000/web/timing.html`；在线版为[https://creavisiontech.github.io/IO-Docking/timing.html](https://creavisiontech.github.io/IO-Docking/timing.html)）。**请用 Chrome/Edge**，不要用
 `file://` 直接打开（Web Serial 可能不工作）。
 
 1. **连接**：点击「连接板卡」，选择 IO Dock 串口。连接成功会自动查询状态。
