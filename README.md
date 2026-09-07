@@ -16,8 +16,6 @@
 <p align="center">
   <a href="https://creavisiontech.github.io/IO-Docking/"><strong>在线控制台</strong></a>
   &nbsp; · &nbsp;
-  <a href="Doc/fast_livo_guide.md">Fast-LIVO 同步指南</a>
-  &nbsp; · &nbsp;
   <a href="web/timing.html">同步任务页</a>
   &nbsp; · &nbsp;
   <a href="firmware/io_dock-9-7.uf2">下载固件 io_dock-9-7.uf2 </a>
