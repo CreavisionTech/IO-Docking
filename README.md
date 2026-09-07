@@ -60,7 +60,7 @@ IO Dock 是一款**即插即用的电脑外设扩展坞**。它通过一根 USB 
 面向 Fast-LIVO(Fast-LIO)、激光雷达/相机等需要多传感器时间同步的场景，板卡可自主输出
 **1 Hz 秒脉冲(PPS) + 多路 10 Hz 触发 + 每秒 GPRMC UTC 报文**，支持 UTC 校时与开机自动运行。
 
-👉 **[打开 Fast-LIVO 操作指南](Doc/fast_livo_guide.md)** · 配套页面 [web/timing.html](web/timing.html)
+👉 **[打开 Fast-LIVO 操作指南](Doc/fast_livo_guide.md)** · 配套页面 [web/timing.html](https://creavisiontech.github.io/IO-Docking/timing.html)
 
 ## 快速上手
 
