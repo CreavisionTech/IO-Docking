@@ -64,21 +64,6 @@ IO Dock 是一款**即插即用的电脑外设扩展坞**。它通过一根 USB 
 
 👉 **[打开 Fast-LIVO 操作指南](Doc/fast_livo_guide.md)** · 配套页面 [web/timing.html](web/timing.html)
 
-> 该模式需要标准固件 **0.2.0+**(含 `TIMING`/`BOOT`/`SEQ SAVE` 命令)。
-
-源码与构建见 [固件 README](firmware/README.md)，修复清单与实机边界见 [验证报告](firmware/validation/REPORT.md)。
-
-<details>
-<summary><strong>标准固件 v0.1.4 · 更新与升级说明</strong></summary>
-
-当前标准固件为 **0.1.4**：[下载 UF2](firmware/io_dock-v0.1.4.uf2)。本轮修复 ADC 采样时序、Flash 双核安全、序列循环/等待、PWM、协议参数校验与上位机并发收发，Python/C++ SDK 同步修复。
-
-标准版为 6 IO / 4 PWM / 2 UART / I2C / SPI / 3 ADC，不兼容 14 IO 定制版的引脚布局。升级后旧持久化参数不自动恢复，需重新配置并保存。
-
-实测二进制 100 kSPS 连续 5 秒完整回传；250/500 kSPS 有过载损失并报告事件，不保证最高速无损。
-
-</details>
-
 ## 快速上手
 
 ### 1. 连接
