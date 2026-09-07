@@ -24,6 +24,30 @@ int main() {
         std::cout << "PASS " << name << '\n'; ++count;
     };
     try {
+        test("timing UTC boot contract", [](IODock& d) {
+            reply("SYNC 1700000000000123 UTC", "OK SYNC offset=12\n"); check(d.syncUtc(1700000000000123ULL).success);
+            reply("TIME", "OK TIME source=HOST unix_us=1700000000000123\n"); check(d.timeStatus().payload.find("source=HOST") != std::string::npos);
+            reply("TIMING CFG 1 14 10 10000 1000 0", "OK TIMING CFG\n"); check(d.timingConfigure(1,14,10,10000,1000).success);
+            reply("TIMING NMEA 2 9600 899999", "OK TIMING NMEA\n"); check(d.timingNmea(2,9600,899999).success);
+            reply("TIMING START", "ERR TIMING START E_BUSY resource owned\n"); check(d.timingStart().errorCode == 5);
+            reply("TIMING START", "ERR TIMING E_BADCMD unknown command\n"); check(d.timingStart().errorCode == 0);
+            reply("TIMING STOP", "OK TIMING STOP\n"); check(d.timingStop().success);
+            reply("TIMING STAT", "OK TIMING STAT active=0 error=0\n"); check(d.timingStatus().payload == "active=0 error=0");
+            reply("BOOT SEQ timing_boot", "OK BOOT SEQ\n"); check(d.bootSequence("timing_boot").success);
+            reply("BOOT SEQ OFF", "OK BOOT SEQ\n"); check(d.bootSequenceOff().success);
+            reply("BOOT SEQ STAT", "OK BOOT SEQ name=OFF error=0\n"); check(d.bootSequenceStatus().payload == "name=OFF error=0");
+        });
+        test("timing validation", [](IODock& d) {
+            auto invalid = [](const std::function<void()>& f) { bool threw=false; try { f(); } catch(const std::invalid_argument&) { threw=true; } check(threw); };
+            invalid([&]{d.timingConfigure(1,14,0,100,100);});
+            invalid([&]{d.timingConfigure(1,14,100,100,10000);});
+            invalid([&]{d.timingConfigure(1,14,10,99,100);});
+            invalid([&]{d.timingConfigure(1,14,10,1000000,100);});
+            invalid([&]{d.timingNmea(1,1199,0);});
+            invalid([&]{d.timingNmea(1,9600,900000);});
+            invalid([&]{d.bootSequence("OFF");});
+            invalid([&]{d.bootSequence("x\nSAVE");});
+        });
         test("fragmentation and short writes", [](IODock& d) {
             mock::expect("PING", {{0,"OK PI"},{130,"NG PONG 0.1.2\r"},{70,"\n"}});
             check(d.ping());

@@ -16,6 +16,10 @@
 <p align="center">
   <a href="https://creavisiontech.github.io/IO-Docking/"><strong>在线控制台</strong></a>
   &nbsp; · &nbsp;
+  <a href="Doc/fast_livo_guide.md">Fast-LIVO 同步指南</a>
+  &nbsp; · &nbsp;
+  <a href="web/timing.html">同步任务页</a>
+  &nbsp; · &nbsp;
   <a href="firmware/io_dock-v0.1.4.uf2">下载固件 v0.1.4</a>
   &nbsp; · &nbsp;
   <a href="Doc/Host_Protocol.md">协议文档</a>
@@ -52,6 +56,15 @@ IO Dock 是一款**即插即用的电脑外设扩展坞**。它通过一根 USB 
 | 事件 | IO 变化、UART 数据、ADC 阈值、序列完成等实时主动上报 |
 
 > 完整命令与参数范围见 [协议手册](#协议)。
+
+### 🛰️ 应用指南 · Fast-LIVO / 雷达相机时间同步
+
+面向 Fast-LIVO(Fast-LIO)、激光雷达/相机等需要多传感器时间同步的场景，板卡可自主输出
+**1 Hz 秒脉冲(PPS) + 多路 10 Hz 触发 + 每秒 GPRMC UTC 报文**，支持 UTC 校时与开机自动运行。
+
+👉 **[打开 Fast-LIVO 操作指南](Doc/fast_livo_guide.md)** · 配套页面 [web/timing.html](web/timing.html)
+
+> 该模式需要标准固件 **0.2.0+**(含 `TIMING`/`BOOT`/`SEQ SAVE` 命令)。
 
 源码与构建见 [固件 README](firmware/README.md)，修复清单与实机边界见 [验证报告](firmware/validation/REPORT.md)。
 
@@ -117,6 +130,8 @@ OK SEQ RUN
 | 路径 | 说明 |
 | --- | --- |
 | [web/index.html](web/index.html) | Web 控制台(单文件、零依赖,Web Serial + 文本协议)。已部署到 GitHub Pages:[https://creavisiontech.github.io/IO-Docking/](https://creavisiontech.github.io/IO-Docking/) |
+| [web/timing.html](web/timing.html) | 同步任务页:Fast-LIVO 预设,板端 1Hz PPS + 多路触发 + GPRMC,UTC 校时与开机运行 |
+| [Doc/fast_livo_guide.md](Doc/fast_livo_guide.md) | Fast-LIVO / 雷达·相机时间同步操作指南(接线、步骤、FAQ) |
 | [.github/workflows/pages.yml](.github/workflows/pages.yml) | GitHub Actions:把 `web/` 自动部署到 GitHub Pages |
 | [protocol/protocol.html](protocol/protocol.html) | 文本协议交互式手册 |
 | [protocol/protocol_bin.html](protocol/protocol_bin.html) | 二进制协议交互式手册 |

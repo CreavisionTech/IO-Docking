@@ -369,7 +369,19 @@ async function copyCmd(idx){
 /* ---------------- 串口 ---------------- */
 let port=null,reader=null,writer=null,conn=false,rxBuf='',pending=null;
 function requireConn(){ if(!conn){toast('请先连接板卡','error');return false;} return true; }
+let requestQueue=[], closing=null, connecting=false;
+function failAll(error){
+  const requests=pending?[pending,...requestQueue]:requestQueue;
+  pending=null;requestQueue=[];
+  for(const p of requests){clearTimeout(p.timer);p.reject(error);}
+}
+function abortRequests(error){
+  failAll(error);
+  void disconnect();
+}
 async function connect(){
+  if(conn||connecting||closing)return;
+  connecting=true;
   try{
     if(!('serial' in navigator)){toast('需 Chrome/Edge 并通过 localhost/HTTPS 打开','error');return;}
     port=await navigator.serial.requestPort();
@@ -380,20 +392,31 @@ async function connect(){
     const ping=await sendCommand('PING');
     if(ping[0]&&ping[0].startsWith('OK'))$('statusTxt').textContent='已连接 '+ping[0].replace('OK PING PONG ','v');
     else toast('注意:未识别到 IO Dock 固件(可能连错设备)','error');
-  }catch(e){toast('连接失败: '+e.message,'error');}
+  }catch(e){toast('连接失败: '+e.message,'error');}finally{if(!conn&&port)await disconnect();connecting=false;}
 }
 async function disconnect(){
+  if(closing)return closing;
   conn=false;
-  if(pending){clearTimeout(pending.timer);pending=null;}
-  try{if(reader){await reader.cancel();reader.releaseLock();}if(writer)writer.releaseLock();if(port)await port.close();}catch(e){}
+  failAll(new Error('已断开'));
+  const oldReader=reader,oldWriter=writer,oldPort=port;
   reader=null;writer=null;port=null;
+  rxBuf='';
   $('statusDot').className='dot gray';$('statusTxt').textContent='未连接';$('btnDisc').disabled=true;
+  closing=(async()=>{
+    try{if(oldReader)await oldReader.cancel();}catch(e){}
+    try{if(oldReader)oldReader.releaseLock();}catch(e){}
+    try{if(oldWriter)oldWriter.releaseLock();}catch(e){}
+    try{if(oldPort)await oldPort.close();}catch(e){}
+  })();
+  try{await closing;}finally{closing=null;}
 }
 async function readLoop(){
+  const activeReader=reader;
   const dec=new TextDecoder();
   try{
-    while(conn&&reader){
-      const {value,done}=await reader.read();if(done)break;
+    while(conn&&reader===activeReader){
+      const {value,done}=await activeReader.read();if(done)break;
+      if(reader!==activeReader)return;
       rxBuf+=dec.decode(value,{stream:true});
       let i;
       while((i=rxBuf.indexOf('\n'))>=0){
@@ -401,7 +424,8 @@ async function readLoop(){
         if(line.trim())handleLine(line.trim());
       }
     }
-  }catch(e){}
+  }catch(e){if(reader===activeReader)abortRequests(e);}
+  finally{if(reader===activeReader)void disconnect();}
 }
 function addLog(cls,txt){
   const log=$('evtLog');const d=document.createElement('div');d.className=cls;d.textContent=txt;
@@ -411,32 +435,56 @@ function addLog(cls,txt){
 function handleLine(line){
   if(line.startsWith('EVT ')){addLog('evt',line);return;}
   if(line.startsWith('DATA')||line.startsWith('DATA_END')){addLog('data',line);return;}
-  if(pending){
-    pending.lines.push(line);
-    if(pending.multiline){
-      if(line==='END'||line.startsWith('ERR ')){finishPending();return;}
-    }else{
-      if(line.startsWith('OK ')||line.startsWith('ERR ')){finishPending();return;}
-    }
-  }else{
-    addLog(line.startsWith('ERR ')?'err':'ok',line);
-  }
+  if(!pending)addLog(line.startsWith('ERR ')?'err':'ok',line);
+  acceptResponse(line);
 }
-function finishPending(){clearTimeout(pending.timer);const p=pending;pending=null;p.resolve(p.lines);}
 function sendCommand(line,{multiline=false,timeout=4000}={}){
   return new Promise((resolve,reject)=>{
-    if(pending)pending.reject(new Error('busy'));
-    pending={multiline,lines:[],resolve,reject,timer:setTimeout(()=>{pending=null;reject(new Error('超时: '+line));},timeout)};
-    writer.write(new TextEncoder().encode(line+'\n')).catch(e=>{pending=null;reject(e);});
+    if(!conn||!writer)return reject(new Error('未连接'));
+    requestQueue.push({line,multiline,timeout,lines:[],resolve,reject,started:false});
+    pumpRequests();
   });
+}
+function pumpRequests(){
+  if(pending||!conn||!writer||!requestQueue.length)return;
+  const p=pending=requestQueue.shift();
+  // 文本没有事务编号：超时/写失败后关闭连接，禁止迟到响应匹配下一请求。
+  p.timer=setTimeout(()=>{
+    if(pending===p)abortRequests(new Error('响应超时，请重新连接: '+p.line));
+  },p.timeout);
+  try{
+    Promise.resolve(writer.write(new TextEncoder().encode(p.line+'\n'))).catch(e=>{
+      if(pending===p)abortRequests(e);
+    });
+  }catch(e){if(pending===p)abortRequests(e);}
+}
+function finishPending(){
+  const p=pending;if(!p)return;
+  clearTimeout(p.timer);pending=null;p.resolve(p.lines);
+  queueMicrotask(pumpRequests);
+}
+function acceptResponse(line){
+  const p=pending;if(!p)return;
+  if(/^(OK|ERR) /.test(line)){
+    const words=p.line.trim().toUpperCase().split(/\s+/);
+    const key=/^(IO|PWM|UART|I2C|SPI|ADC|SEQ|CFG)$/.test(words[0])?words.slice(0,2).join(' '):words[0];
+    const body=line.replace(/^(OK|ERR) /,'');
+    if(body!==key&&!body.startsWith(key+' ')&&!line.startsWith('ERR LINE '))return;
+    p.started=true;p.lines.push(line);
+    if(line.startsWith('ERR ')||!p.multiline)finishPending();
+  }else if(p.multiline&&p.started){
+    p.lines.push(line);
+    if(line==='END')finishPending();
+  }
 }
 async function sendCmd(idx){
   const c=CMDS[idx];
   if(!requireConn())return;
   if(c.confirm&&!confirm(c.confirm))return;
+  let line='';
   try{
     const v={};c.params.forEach((p,j)=>{v['p'+j]=readParam(idx,j,p);});
-    const line=c.build(v);
+    line=c.build(v);
     addLog('tx','> '+line);
     const r=await sendCommand(line,{multiline:!!c.multiline});
     showOut(idx,line,r.join('\n'),r[0]&&r[0].startsWith('ERR'));
@@ -445,10 +493,11 @@ async function sendCmd(idx){
 async function sendExtra(idx,label){
   const c=CMDS[idx];
   if(!requireConn())return;
+  let line='';
   try{
     const v={};c.params.forEach((p,j)=>{v['p'+j]=readParam(idx,j,p);});
     const e=(c.extra||[]).find(x=>x.label===label);
-    const line=e.build(v);
+    line=e.build(v);
     addLog('tx','> '+line);
     const r=await sendCommand(line,{multiline:!!c.multiline});
     showOut(idx,line,r.join('\n'),r[0]&&r[0].startsWith('ERR'));

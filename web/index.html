@@ -561,9 +561,21 @@ window.addEventListener('unhandledrejection', e => {
 
 /* ==================== 串口与协议 ==================== */
 let port=null, reader=null, writer=null, conn=false, rxBuf='';
-let pending=null; // {key,multiline,lines,resolve,reject,timer}
+let pending=null; // 当前正在等待响应的事务
 
+let requestQueue=[], closing=null, connecting=false;
+function failAll(error){
+  const requests=pending?[pending,...requestQueue]:requestQueue;
+  pending=null;requestQueue=[];
+  for(const p of requests){clearTimeout(p.timer);p.reject(error);}
+}
+function abortRequests(error){
+  failAll(error);
+  void disconnect();
+}
 async function connect(){
+  if(conn||connecting||closing)return;
+  connecting=true;
   try{
     if(!('serial' in navigator)){toast('浏览器不支持 Web Serial,请用 Chrome/Edge','error');return;}
     port = await navigator.serial.requestPort();
@@ -572,23 +584,33 @@ async function connect(){
     $('status').innerHTML='<span class="dot green"></span>已连接';
     $('btn-disc').disabled=false; toast('连接成功','success');
     readLoop(); ping(); info();
-  }catch(e){ toast('连接失败: '+e.message,'error'); }
+  }catch(e){ toast('连接失败: '+e.message,'error'); }finally{if(!conn&&port)await disconnect();connecting=false;}
 }
 async function disconnect(){
+  if(closing)return closing;
   conn=false;
-  try{ if(pending){clearTimeout(pending.timer);pending.reject(new Error('已断开'));pending=null;} }
-  catch(e){}
-  try{ if(reader){await reader.cancel();reader.releaseLock();} if(writer)writer.releaseLock(); if(port)await port.close(); }catch(e){}
+  failAll(new Error('已断开'));
+  const oldReader=reader,oldWriter=writer,oldPort=port;
   reader=null;writer=null;port=null;
+  rxBuf='';
   $('status').innerHTML='<span class="dot gray"></span>未连接'; $('btn-disc').disabled=true;
   toast('已断开','info');
+  closing=(async()=>{
+    try{if(oldReader)await oldReader.cancel();}catch(e){}
+    try{if(oldReader)oldReader.releaseLock();}catch(e){}
+    try{if(oldWriter)oldWriter.releaseLock();}catch(e){}
+    try{if(oldPort)await oldPort.close();}catch(e){}
+  })();
+  try{await closing;}finally{closing=null;}
 }
 async function readLoop(){
+  const activeReader=reader;
   const dec=new TextDecoder();
   try{
-    while(conn&&reader){
-      const {value,done}=await reader.read();
+    while(conn&&reader===activeReader){
+      const {value,done}=await activeReader.read();
       if(done)break;
+      if(reader!==activeReader)return;
       rxBuf+=dec.decode(value,{stream:true});
       let i;
       while((i=rxBuf.indexOf('\n'))>=0){
@@ -596,24 +618,52 @@ async function readLoop(){
         if(line.trim()) handleLine(line.trim());
       }
     }
-  }catch(e){/* port closed */}
+  }catch(e){if(reader===activeReader)abortRequests(e);}
+  finally{if(reader===activeReader)void disconnect();}
 }
 function sendRaw(s){
   if(!requireConn())return false;
-  writer.write(new TextEncoder().encode(s+'\n')).catch(e=>toast('发送失败','error'));
+  sendCommand(s).then(()=>disconnect()).catch(e=>toast('发送失败: '+e.message,'error'));
   return true;
 }
 function sendCommand(line,{multiline=false,timeout=3500}={}){
   return new Promise((resolve,reject)=>{
-    const key=line.split(' ')[0];
-    if(pending){clearTimeout(pending.timer);pending.reject(new Error('上一命令未完成: '+pending.key));}
-    pending={key,multiline,lines:[],resolve,reject,
-      timer:setTimeout(()=>{if(pending&&pending.key===key){pending=null;reject(new Error('响应超时: '+line));}},timeout)};
-    writer.write(new TextEncoder().encode(line+'\n')).catch(e=>{if(pending&&pending.key===key){pending=null;reject(e);}});
+    if(!conn||!writer)return reject(new Error('未连接'));
+    requestQueue.push({line,multiline,timeout,lines:[],resolve,reject,started:false});
+    pumpRequests();
   });
 }
-function finishPending(lines){
-  clearTimeout(pending.timer); const p=pending; pending=null; p.resolve(lines);
+function pumpRequests(){
+  if(pending||!conn||!writer||!requestQueue.length)return;
+  const p=pending=requestQueue.shift();
+  // 文本没有事务编号：超时/写失败后关闭连接，禁止迟到响应匹配下一请求。
+  p.timer=setTimeout(()=>{
+    if(pending===p)abortRequests(new Error('响应超时，请重新连接: '+p.line));
+  },p.timeout);
+  try{
+    Promise.resolve(writer.write(new TextEncoder().encode(p.line+'\n'))).catch(e=>{
+      if(pending===p)abortRequests(e);
+    });
+  }catch(e){if(pending===p)abortRequests(e);}
+}
+function finishPending(){
+  const p=pending;if(!p)return;
+  clearTimeout(p.timer);pending=null;p.resolve(p.lines);
+  queueMicrotask(pumpRequests);
+}
+function acceptResponse(line){
+  const p=pending;if(!p)return;
+  if(/^(OK|ERR) /.test(line)){
+    const words=p.line.trim().toUpperCase().split(/\s+/);
+    const key=/^(IO|PWM|UART|I2C|SPI|ADC|SEQ|CFG)$/.test(words[0])?words.slice(0,2).join(' '):words[0];
+    const body=line.replace(/^(OK|ERR) /,'');
+    if(body!==key&&!body.startsWith(key+' ')&&!line.startsWith('ERR LINE '))return;
+    p.started=true;p.lines.push(line);
+    if(line.startsWith('ERR ')||!p.multiline)finishPending();
+  }else if(p.multiline&&p.started){
+    p.lines.push(line);
+    if(line==='END')finishPending();
+  }
 }
 function handleLine(line){
   // 异步事件与数据流
@@ -621,20 +671,7 @@ function handleLine(line){
   if(line.startsWith('DATA ')) return handleData(line);
   if(line.startsWith('DATA_END')) return handleDataEnd(line);
   termLine('rx',line);
-  if(pending){
-    pending.lines.push(line);
-    if(line.startsWith('OK ')||line.startsWith('ERR ')){
-      const tok=line.split(' ')[1];
-      if(tok===pending.key){
-        if(!pending.multiline) return finishPending(pending.lines);
-        return; // multiline: 等 END
-      }
-      // 不匹配 -> 当作无关输出
-      pending.lines.pop();
-      return;
-    }
-    if(pending.multiline && line==='END') return finishPending(pending.lines);
-  }
+  acceptResponse(line);
 }
 function termLine(kind,text){
   const log=$('termLog');
@@ -650,7 +687,7 @@ function showResult(id,text,kind='info'){
   const el=$(id); if(!el)return;
   el.textContent=text; el.className='result '+kind;
 }
-function errCode(line){ const m=line.match(/ERR\s+\S+\s+(\S+)/); return m?m[1]:''; }
+function errCode(line){ const m=String(line||'').match(/\b(E_[A-Z0-9_]+)\b/); return m?m[1]:''; }
 
 /* ==================== 事件 / 数据流 ==================== */
 function handleEvent(line){
@@ -1236,14 +1273,12 @@ function sysReset(){
   if(!confirm('确定软复位板卡?复位后串口会断开,需重新连接。'))return;
   sendRaw('RESET');
   toast('已发送复位命令,板卡即将重启','info');
-  setTimeout(disconnect,600);
 }
 function sysBootloader(){
   if(!requireConn())return;
   if(!confirm('进入烧写模式后串口会断开,板卡会变成一个 U 盘。确定继续?'))return;
   sendRaw('BOOTLOADER');
   toast('已进入烧写模式,请等待板卡枚举为 U 盘后拖入固件文件','success');
-  setTimeout(disconnect,800);
 }
 async function cfgSave(){
   if(!requireConn())return;

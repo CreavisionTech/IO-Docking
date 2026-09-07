@@ -441,7 +441,19 @@ function addLog(cls,txt){
   const log=$('evtLog'),d=document.createElement('div');d.className=cls;d.textContent=txt;
   log.appendChild(d);while(log.children.length>200)log.firstChild.remove();log.scrollTop=log.scrollHeight;
 }
+let requestQueue=[], closing=null, connecting=false;
+function failAll(error){
+  const requests=pending?[pending,...requestQueue]:requestQueue;
+  pending=null;requestQueue=[];
+  for(const p of requests){clearTimeout(p.timer);p.reject(error);}
+}
+function abortRequests(error){
+  failAll(error);
+  void disconnect();
+}
 async function connect(){
+  if(conn||connecting||closing)return;
+  connecting=true;
   try{
     if(!('serial' in navigator)){toast('需 Chrome/Edge 并通过 localhost/HTTPS 打开','error');return;}
     port=await navigator.serial.requestPort();
@@ -452,26 +464,40 @@ async function connect(){
     // 发送文本 BIN ENTER 进入二进制模式
     textBuf='';binAckResolve=null;
     const ack=new Promise(r=>{binAckResolve=r;});
-    writer.write(new TextEncoder().encode('BIN ENTER\n')).catch(e=>{});
-    const ok=await Promise.race([ack.then(()=>true),new Promise(r=>setTimeout(()=>r(false),2500))]);
+    writer.write(new TextEncoder().encode('BIN ENTER\n')).catch(e=>abortRequests(e));
+    const ok=await Promise.race([ack,new Promise(r=>setTimeout(()=>r(false),2500))]);
+    binAckResolve=null;
+    if(!conn)return;
     binMode=true;
     if(!ok)toast('未收到 OK BIN(板卡可能已在二进制模式,或连错设备)','error');
     $('statusDot').className='dot green';$('statusTxt').textContent='已连接 · 二进制';$('btnText').disabled=false;
     toast('已连接并进入二进制模式','success');
-  }catch(e){toast('连接失败: '+e.message,'error');}
+  }catch(e){toast('连接失败: '+e.message,'error');}finally{if(!conn&&port)await disconnect();connecting=false;}
 }
 async function disconnect(){
-  conn=false;binMode=false;
-  if(pending){clearTimeout(pending.timer);pending=null;}
-  try{if(reader){await reader.cancel();reader.releaseLock();}if(writer)writer.releaseLock();if(port)await port.close();}catch(e){}
-  reader=null;writer=null;port=null;textBuf='';binBuf=[];
+  if(closing)return closing;
+  conn=false;
+  failAll(new Error('已断开'));
+  binMode=false;if(binAckResolve){binAckResolve(false);binAckResolve=null;}
+  const oldReader=reader,oldWriter=writer,oldPort=port;
+  reader=null;writer=null;port=null;
+  textBuf='';binBuf=[];
   $('statusDot').className='dot gray';$('statusTxt').textContent='未连接';$('btnDisc').disabled=true;$('btnText').disabled=true;
+  closing=(async()=>{
+    try{if(oldReader)await oldReader.cancel();}catch(e){}
+    try{if(oldReader)oldReader.releaseLock();}catch(e){}
+    try{if(oldWriter)oldWriter.releaseLock();}catch(e){}
+    try{if(oldPort)await oldPort.close();}catch(e){}
+  })();
+  try{await closing;}finally{closing=null;}
 }
 async function readLoop(){
+  const activeReader=reader;
   const dec=new TextDecoder();
   try{
-    while(conn&&reader){
-      const {value,done}=await reader.read();if(done)break;
+    while(conn&&reader===activeReader){
+      const {value,done}=await activeReader.read();if(done)break;
+      if(reader!==activeReader)return;
       if(binMode){
         for(const b of value)binBuf.push(b);
         parseFrames();
@@ -484,10 +510,11 @@ async function readLoop(){
         }
       }
     }
-  }catch(e){}
+  }catch(e){if(reader===activeReader)abortRequests(e);}
+  finally{if(reader===activeReader)void disconnect();}
 }
 function handleTextLine(line){
-  if(binAckResolve&&line.startsWith('OK BIN')){binAckResolve();binAckResolve=null;return;}
+  if(binAckResolve&&line.startsWith('OK BIN')){binAckResolve(true);binAckResolve=null;return;}
   addLog(line.startsWith('OK ')?'resp':'err',line);
 }
 function parseFrames(){
@@ -506,9 +533,11 @@ function parseFrames(){
 function dispatchFrame(type,op,seq,payload){
   const name=opName(op);
   if(type===0x02||type===0x03){
-    if(pending&&pending.seq===seq){
+    if(pending&&pending.seq===seq&&pending.op===op){
       clearTimeout(pending.timer);const p=pending;pending=null;
-      p.resolve({type,op,payload});
+      if(type===0x02&&op===0x0F){binMode=false;failAll(new Error('已退出二进制模式'));}
+      p.resolve({type,op,seq,payload});
+      queueMicrotask(pumpRequests);
     }else addLog(type===0x02?'resp':'err',`${name}: ${decodeResp(op,payload)}`);
     return;
   }
@@ -517,14 +546,23 @@ function dispatchFrame(type,op,seq,payload){
 }
 function sendBin(op,payload){
   return new Promise((resolve,reject)=>{
-    if(!conn)return reject(new Error('未连接'));
-    const seq=(seqNum++)&0xFFFF;
-    if(pending)pending.reject(new Error('busy'));
-    pending={seq,resolve,reject,timer:setTimeout(()=>{pending=null;reject(new Error('超时'));},4000)};
-    const frame=buildFrame(0x01,op,payload,seq);
-    addLog('tx',`> ${opName(op)} ${hexBytes(payload)}`);
-    writer.write(frame).catch(e=>{pending=null;reject(e);});
+    if(!conn||!writer||!binMode)return reject(new Error('未连接或未进入二进制模式'));
+    requestQueue.push({op,payload:Uint8Array.from(payload),resolve,reject});
+    pumpRequests();
   });
+}
+function pumpRequests(){
+  if(pending||!conn||!binMode||!writer||!requestQueue.length)return;
+  const p=pending=requestQueue.shift();
+  p.seq=(seqNum++)&0xFFFF;
+  p.timer=setTimeout(()=>{
+    if(pending===p)abortRequests(new Error('响应超时，请重新连接'));
+  },4000);
+  try{
+    const frame=buildFrame(0x01,p.op,p.payload,p.seq);
+    addLog('tx',`> ${opName(p.op)} ${hexBytes(p.payload)}`);
+    Promise.resolve(writer.write(frame)).catch(e=>{if(pending===p)abortRequests(e);});
+  }catch(e){if(pending===p)abortRequests(e);}
 }
 async function sendCmd(idx){
   const c=CMDS[idx];
@@ -533,7 +571,7 @@ async function sendCmd(idx){
     const v={__idx:idx};
     const {pay}=buildFrameParts(c.op,c.fields,v,seqNum&0xffff);
     const r=await sendBin(c.op,pay.bytes);
-    const usedSeq=(seqNum-1)&0xffff;
+    const usedSeq=r.seq;
     const {segs,frame}=buildFrameParts(c.op,c.fields,v,usedSeq);
     const el=$('prev_'+idx);if(el)el.innerHTML=byteDiagram(segs);
     showOut(idx,frame,`${c.name} → ${r.type===0x03?'ERR ':''}${decodeResp(r.op,r.payload)}`,r.type===0x03);
@@ -543,6 +581,7 @@ async function exitToText(){
   if(!requireConn())return;
   try{
     const r=await sendBin(0x0F,new Uint8Array(0));
+    if(r.type===0x03)throw new Error(decodeResp(r.op,r.payload));
     binMode=false;textBuf='';
     $('statusDot').className='dot gray';$('statusTxt').textContent='已退出到文本模式';$('btnText').disabled=true;
     addLog('resp',`MODE_EXIT → ${decodeResp(r.op,r.payload)}`);
