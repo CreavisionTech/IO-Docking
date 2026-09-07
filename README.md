@@ -16,7 +16,7 @@
 <p align="center">
   <a href="https://creavisiontech.github.io/IO-Docking/"><strong>在线控制台</strong></a>
   &nbsp; · &nbsp;
-  <a href="web/timing.html">同步任务页</a>
+  <a href="https://creavisiontech.github.io/IO-Docking/timing.html">FAST-LIVO任务页</a>
   &nbsp; · &nbsp;
   <a href="firmware/io_dock-9-7.uf2">下载固件 io_dock-9-7.uf2 </a>
   &nbsp; · &nbsp;
@@ -74,7 +74,7 @@ IO Dock 是一款**即插即用的电脑外设扩展坞**。它通过一根 USB 
 
 用 Chrome 或 Edge 打开 **[在线 Web 控制台](https://creavisiontech.github.io/IO-Docking/)**(GitHub Pages 静态页,HTTPS 下 Web Serial 直接可用),点击「连接」选择对应串口,即可图形化操作全部功能。
 
-> 也可直接打开 [web/index.html](web/index.html);若以 `file://` 方式打开时无法使用串口,可在该目录运行 `python -m http.server` 后访问 `http://localhost:8000`。
+> 也可直接打开 [web/index.html](https://creavisiontech.github.io/IO-Docking/timing.html);若以 `file://` 方式打开时无法使用串口,可在该目录运行 `python -m http.server` 后访问 `http://localhost:8000`。
 
 **方式 B · 任意串口终端**
 
