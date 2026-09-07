@@ -791,7 +791,36 @@ void IODock::stopEventListener() {
     if (eventThread_.joinable()) eventThread_.join();
 }
 
+Response IODock::syncUtc() { return sendCommandPrepared("SYNC 0 UTC", true); }
+Response IODock::syncUtc(uint64_t unixUs) { return sendCommand("SYNC " + std::to_string(unixUs) + " UTC"); }
+Response IODock::timeStatus() { return sendCommand("TIME"); }
+Response IODock::timingConfigure(int pps, int mask, int hz, uint32_t pw, uint32_t tw, bool invert) {
+    if (pps < 1 || pps > 4 || mask < 1 || mask > 15 || hz < 1 || hz > 100 || pw < 100 || pw >= 1000000 || tw < 100 || tw >= 1000000u / hz)
+        throw std::invalid_argument("Invalid timing configuration");
+    return sendCommand("TIMING CFG " + std::to_string(pps) + " " + std::to_string(mask) + " " +
+        std::to_string(hz) + " " + std::to_string(pw) + " " + std::to_string(tw) + " " + (invert ? "1" : "0"));
+}
+Response IODock::timingNmea(int uart, uint32_t baud, uint32_t delayUs) {
+    if (uart < 0 || uart > 2 || baud < 1200 || baud > 7800000 || delayUs >= 900000) throw std::invalid_argument("Invalid NMEA configuration");
+    return sendCommand("TIMING NMEA " + std::to_string(uart) + " " + std::to_string(baud) + " " + std::to_string(delayUs));
+}
+Response IODock::timingStart() { return sendCommand("TIMING START"); }
+Response IODock::timingStop() { return sendCommand("TIMING STOP"); }
+Response IODock::timingStatus() { return sendCommand("TIMING STAT"); }
+Response IODock::bootSequence(const std::string& name) {
+    std::string upper = name;
+    std::transform(upper.begin(), upper.end(), upper.begin(), [](unsigned char c) { return std::toupper(c); });
+    if (name.empty() || name.size() > 15 || name.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_") != std::string::npos || upper == "OFF" || upper == "STAT")
+        throw std::invalid_argument("Invalid boot sequence name");
+    return sendCommand("BOOT SEQ " + name);
+}
+Response IODock::bootSequenceOff() { return sendCommand("BOOT SEQ OFF"); }
+Response IODock::bootSequenceStatus() { return sendCommand("BOOT SEQ STAT"); }
+
 Response IODock::sendCommand(const std::string& cmd) {
+    return sendCommandPrepared(cmd, false);
+}
+Response IODock::sendCommandPrepared(std::string cmd, bool utcNow) {
     std::lock_guard<std::mutex> commandLock(commandMutex_);
     Response resp{false, cmd, "", "", -1};
     std::unique_lock<std::mutex> lock(mutex_);
@@ -805,7 +834,7 @@ Response IODock::sendCommand(const std::string& cmd) {
     words >> name;
     std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return std::toupper(c); });
     if (name == "IO" || name == "PWM" || name == "UART" || name == "I2C" ||
-        name == "SPI" || name == "ADC" || name == "SEQ" || name == "BIN" || name == "CFG") {
+        name == "SPI" || name == "ADC" || name == "SEQ" || name == "BIN" || name == "CFG" || name == "TIMING" || name == "BOOT") {
         words >> sub;
         std::transform(sub.begin(), sub.end(), sub.begin(), [](unsigned char c) { return std::toupper(c); });
         if (!sub.empty()) name += " " + sub;
@@ -815,6 +844,12 @@ Response IODock::sendCommand(const std::string& cmd) {
         synchronized_ = false; resp.error = "Unsolicited response; close and reopen"; return resp;
     }
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    if (utcNow) {
+        const auto us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        cmd = "SYNC " + std::to_string(us) + " UTC";
+        resp.command = cmd;
+    }
     const auto wire = cmd + "\n";
     size_t sent = 0;
     while (sent < wire.size()) {
@@ -837,7 +872,7 @@ Response IODock::sendCommand(const std::string& cmd) {
                 header = true;
             } else if (line.compare(0, 4, "ERR ") == 0) {
                 resp = parseResponse(line);
-                if (resp.command != name && resp.command != "LINE") {
+                if (resp.command != name && resp.command != "LINE" && !(resp.errorCode == 0 && resp.command == name.substr(0, name.find(' ')))) {
                     synchronized_ = false; resp.error = "Mismatched error response: " + line;
                 }
                 resp.command = cmd; return resp;

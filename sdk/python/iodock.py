@@ -96,6 +96,10 @@ class PWMConfig:
 # 主控制类
 # ============================================================================
 
+class _UtcCommand(str):
+    """Internal send-time UTC marker; never sent literally."""
+
+
 class IODock:
     """
     IO Docking Board 主控制类
@@ -283,6 +287,60 @@ class IODock:
             return int(resp.payload[start:end])
         return 0
     
+    def sync_utc(self, unix_us: Optional[int] = None) -> Response:
+        """同步 UTC；省略时间时在取得发送锁后读取系统 Unix 微秒。"""
+        if unix_us is None:
+            return self.send_command(_UtcCommand("SYNC 0 UTC"))
+        self._timing_integer(unix_us, 0, 2**64 - 1)
+        return self.send_command(f"SYNC {unix_us} UTC")
+
+    syncUtc = sync_utc
+
+    def time_status(self) -> Response:
+        return self.send_command("TIME")
+
+    @staticmethod
+    def _timing_integer(value, low, high):
+        if not isinstance(value, int) or not low <= value <= high:
+            raise ValueError(f"整数参数须在 {low}..{high} 范围内")
+
+    def timing_configure(self, pps: int, trigger_mask: int, hz: int,
+                         pps_width_us: int, trigger_width_us: int,
+                         invert: bool = False) -> Response:
+        self._timing_integer(hz, 1, 100)
+        for value, low, high in ((pps, 1, 4), (trigger_mask, 1, 15),
+                                 (hz, 1, 100), (pps_width_us, 100, 999999),
+                                 (trigger_width_us, 100, 1000000 // hz - 1), (invert, 0, 1)):
+            self._timing_integer(value, low, high)
+        return self.send_command(f"TIMING CFG {pps} {trigger_mask} {hz} "
+                                 f"{pps_width_us} {trigger_width_us} {int(invert)}")
+
+    def timing_nmea(self, uart: int = 0, baud: int = 115200,
+                    delay_us: int = 0) -> Response:
+        for value, low, high in ((uart, 0, 2), (baud, 1200, 7800000),
+                                 (delay_us, 0, 899999)):
+            self._timing_integer(value, low, high)
+        return self.send_command(f"TIMING NMEA {uart} {baud} {delay_us}")
+
+    def timing_start(self) -> Response:
+        return self.send_command("TIMING START")
+
+    def timing_stop(self) -> Response:
+        return self.send_command("TIMING STOP")
+
+    def timing_status(self) -> Response:
+        return self.send_command("TIMING STAT")
+
+    def boot_sequence(self, name: Optional[str] = None) -> Response:
+        """选择已定义序列；None 关闭。显式 send_command('SAVE') 持久化。"""
+        if name is not None and (not re.fullmatch(r"[A-Za-z0-9_]{1,15}", name)
+                                 or name.upper() in {"OFF", "STAT"}):
+            raise ValueError("序列名须为字母、数字或下划线，且不能为 OFF/STAT")
+        return self.send_command("BOOT SEQ " + (name if name is not None else "OFF"))
+
+    def boot_sequence_status(self) -> Response:
+        return self.send_command("BOOT SEQ STAT")
+
     # ========================================================================
     # IO 控制（6路）
     # ========================================================================
@@ -1024,7 +1082,7 @@ class IODock:
                     self._fail("串口读取失败: " + str(exc))
 
     _MULTILINE = {"INFO", "HELP", "IO READALL", "ADC READALL", "I2C SCAN"}
-    _GROUPS = {"IO", "PWM", "UART", "I2C", "SPI", "ADC", "SEQ", "CFG", "BIN"}
+    _GROUPS = {"IO", "PWM", "UART", "I2C", "SPI", "ADC", "SEQ", "CFG", "BIN", "TIMING", "BOOT"}
 
     @classmethod
     def _command_name(cls, cmd):
@@ -1049,6 +1107,8 @@ class IODock:
                 connection = self.serial
             deadline = time.monotonic() + self.timeout
             try:
+                if isinstance(cmd, _UtcCommand):
+                    cmd = f"SYNC {time.time_ns() // 1000} UTC"
                 wire = (cmd + "\n").encode("utf-8")
                 if connection.write(wire) != len(wire):
                     raise OSError("串口写入不完整")

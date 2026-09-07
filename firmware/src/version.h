@@ -1,7 +1,0 @@
-#ifndef IO_DOCK_VERSION_H
-#define IO_DOCK_VERSION_H
-#define FW_VERSION "0.1.4"
-#define FW_VERSION_MAJOR 0
-#define FW_VERSION_MINOR 1
-#define FW_VERSION_PATCH 4
-#endif

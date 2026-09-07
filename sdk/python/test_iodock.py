@@ -68,6 +68,53 @@ class SDKTests(unittest.TestCase):
     def reply(self, text):
         self.ser.responder = lambda cmd: text
 
+    def test_timing_contract(self):
+        calls = [(lambda: self.dock.sync_utc(1700000000000123), 'SYNC 1700000000000123 UTC'),
+                 (self.dock.time_status, 'TIME'),
+                 (lambda: self.dock.timing_configure(1, 14, 10, 10000, 1000), 'TIMING CFG 1 14 10 10000 1000 0'),
+                 (lambda: self.dock.timing_nmea(2, 9600, 899999), 'TIMING NMEA 2 9600 899999'),
+                 (self.dock.timing_start, 'TIMING START'), (self.dock.timing_stop, 'TIMING STOP'),
+                 (self.dock.timing_status, 'TIMING STAT'),
+                 (lambda: self.dock.boot_sequence('timing_boot'), 'BOOT SEQ timing_boot'),
+                 (self.dock.boot_sequence, 'BOOT SEQ OFF'),
+                 (self.dock.boot_sequence_status, 'BOOT SEQ STAT')]
+        for call, command in calls:
+            self.assertTrue(call().success)
+            self.assertEqual(self.ser.writes[-1], command)
+        self.reply('OK TIME source=HOST unix_us=1700000000000123\n')
+        self.assertIn('source=HOST', self.dock.time_status().payload)
+        self.reply('ERR TIMING START E_BUSY resource owned\n')
+        self.assertEqual(self.dock.timing_start().error_code, 5)
+        self.reply('ERR TIMING E_BADCMD unknown command\n')
+        self.assertEqual(self.dock.timing_start().error_code, 0)
+        self.assertIsNone(self.dock._failure)
+
+    def test_utc_sampled_after_send_lock(self):
+        with patch('iodock.time.time_ns', return_value=1700000000123456789) as now:
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                with self.dock._command_lock:
+                    started = threading.Event()
+                    def run():
+                        started.set()
+                        return self.dock.syncUtc()
+                    future = pool.submit(run)
+                    self.assertTrue(started.wait(1))
+                    now.assert_not_called()
+                self.assertTrue(future.result(timeout=1).success)
+            now.assert_called_once()
+        self.assertEqual(self.ser.writes[-1], 'SYNC 1700000000123456 UTC')
+
+    def test_timing_invalid_values_never_write(self):
+        for args in [(0,14,10,100,100), (1,0,10,100,100), (1,14,0,100,100),
+                     (1,14,101,100,100), (1,14,10,99,100), (1,14,10,1000000,100),
+                     (1,14,100,100,10000), (1,14,10,100,99)]:
+            with self.assertRaises(ValueError): self.dock.timing_configure(*args)
+        for args in [(3,9600,0), (0,1199,0), (1,7800001,0), (1,9600,900000)]:
+            with self.assertRaises(ValueError): self.dock.timing_nmea(*args)
+        for name in ['OFF', 'stat', 'x'*16, 'a b', 'x\nSAVE']:
+            with self.assertRaises(ValueError): self.dock.boot_sequence(name)
+        self.assertEqual(self.ser.writes, [])
+
     def test_multiline_info_and_following_ping(self):
         self.ser.responder = lambda cmd: (
             'OK INFO\r\n board=IO-Dock\n mcu=RP2040\n fw=0.1.3\n'

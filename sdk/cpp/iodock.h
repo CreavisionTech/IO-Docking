@@ -145,6 +145,21 @@ public:
      */
     int64_t syncTime(uint64_t hostUs);
 
+    // New timing APIs return full responses; status payloads are kept verbatim.
+    Response syncUtc(); // System Unix microseconds sampled after acquiring send locks.
+    Response syncUtc(uint64_t unixUs);
+    Response timeStatus();
+    Response timingConfigure(int pps, int triggerMask, int hz,
+                             uint32_t ppsWidthUs, uint32_t triggerWidthUs, bool invert = false);
+    Response timingNmea(int uart = 0, uint32_t baud = 115200, uint32_t delayUs = 0);
+    Response timingStart();
+    Response timingStop();
+    Response timingStatus();
+    Response bootSequence(const std::string& name); // Existing sequence; SAVE separately.
+    Response bootSequenceOff();
+    Response bootSequenceStatus();
+
+
     // ========== IO 控制（6路）==========
     
     /**
@@ -521,6 +536,7 @@ public:
     Response sendCommand(const std::string& cmd);
 
 private:
+    Response sendCommandPrepared(std::string cmd, bool utcNow);
     std::string port_;
     uint32_t baud_;
     SerialPort* serial_;
