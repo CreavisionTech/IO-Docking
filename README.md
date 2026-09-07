@@ -20,7 +20,7 @@
   &nbsp; · &nbsp;
   <a href="web/timing.html">同步任务页</a>
   &nbsp; · &nbsp;
-  <a href="firmware/io_dock-v0.1.4.uf2">下载固件 v0.1.4</a>
+  <a href="firmware/io_dock-9-7.uf2">下载固件 io_dock-9-7.uf2 </a>
   &nbsp; · &nbsp;
   <a href="Doc/Host_Protocol.md">协议文档</a>
   &nbsp; · &nbsp;
