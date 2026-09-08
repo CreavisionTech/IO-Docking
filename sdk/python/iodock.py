@@ -336,10 +336,10 @@ class IODock:
         if name is not None and (not re.fullmatch(r"[A-Za-z0-9_]{1,15}", name)
                                  or name.upper() in {"OFF", "STAT"}):
             raise ValueError("序列名须为字母、数字或下划线，且不能为 OFF/STAT")
-        return self.send_command("BOOT SEQ " + (name if name is not None else "OFF"))
+        return self.send_command("BOOT OFF" if name is None else "BOOT SEQ " + name)
 
     def boot_sequence_status(self) -> Response:
-        return self.send_command("BOOT SEQ STAT")
+        return self.send_command("BOOT STAT")
 
     # ========================================================================
     # IO 控制（6路）

@@ -814,8 +814,8 @@ Response IODock::bootSequence(const std::string& name) {
         throw std::invalid_argument("Invalid boot sequence name");
     return sendCommand("BOOT SEQ " + name);
 }
-Response IODock::bootSequenceOff() { return sendCommand("BOOT SEQ OFF"); }
-Response IODock::bootSequenceStatus() { return sendCommand("BOOT SEQ STAT"); }
+Response IODock::bootSequenceOff() { return sendCommand("BOOT OFF"); }
+Response IODock::bootSequenceStatus() { return sendCommand("BOOT STAT"); }
 
 Response IODock::sendCommand(const std::string& cmd) {
     return sendCommandPrepared(cmd, false);
