@@ -76,8 +76,8 @@ class SDKTests(unittest.TestCase):
                  (self.dock.timing_start, 'TIMING START'), (self.dock.timing_stop, 'TIMING STOP'),
                  (self.dock.timing_status, 'TIMING STAT'),
                  (lambda: self.dock.boot_sequence('timing_boot'), 'BOOT SEQ timing_boot'),
-                 (self.dock.boot_sequence, 'BOOT SEQ OFF'),
-                 (self.dock.boot_sequence_status, 'BOOT SEQ STAT')]
+                 (self.dock.boot_sequence, 'BOOT OFF'),
+                 (self.dock.boot_sequence_status, 'BOOT STAT')]
         for call, command in calls:
             self.assertTrue(call().success)
             self.assertEqual(self.ser.writes[-1], command)

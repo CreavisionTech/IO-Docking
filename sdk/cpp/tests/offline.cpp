@@ -34,8 +34,8 @@ int main() {
             reply("TIMING STOP", "OK TIMING STOP\n"); check(d.timingStop().success);
             reply("TIMING STAT", "OK TIMING STAT active=0 error=0\n"); check(d.timingStatus().payload == "active=0 error=0");
             reply("BOOT SEQ timing_boot", "OK BOOT SEQ\n"); check(d.bootSequence("timing_boot").success);
-            reply("BOOT SEQ OFF", "OK BOOT SEQ\n"); check(d.bootSequenceOff().success);
-            reply("BOOT SEQ STAT", "OK BOOT SEQ name=OFF error=0\n"); check(d.bootSequenceStatus().payload == "name=OFF error=0");
+            reply("BOOT OFF", "OK BOOT OFF\n"); check(d.bootSequenceOff().success);
+            reply("BOOT STAT", "OK BOOT STAT name=OFF error=0\n"); check(d.bootSequenceStatus().payload == "name=OFF error=0");
         });
         test("timing validation", [](IODock& d) {
             auto invalid = [](const std::function<void()>& f) { bool threw=false; try { f(); } catch(const std::invalid_argument&) { threw=true; } check(threw); };
