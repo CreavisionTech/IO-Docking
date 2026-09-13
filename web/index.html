@@ -131,7 +131,38 @@ canvas{width:100%;height:160px;display:block;border-radius:8px;background:#fbfcf
 .led-row{display:flex;gap:6px;align-items:center}
 .slider-val{min-width:44px;text-align:right;font-weight:700;color:var(--primary)}
 .hr{height:1px;background:var(--line);margin:14px 0}
-.note{font-size:12px;color:var(--muted);margin-top:8px}
+.note{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.7}
+.note code{background:var(--primary-soft);color:var(--primary);padding:1px 5px;border-radius:5px;font-size:11.5px}
+/* ---------- I2C 工作台 ---------- */
+.def-area{width:100%;min-height:210px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.65}
+.wtable{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
+.wtable th,.wtable td{padding:7px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+.wtable th{color:var(--muted);font-weight:600;font-size:12px;background:#fbfcfe}
+.wtable td:first-child,.wtable td.v,.wtable td:last-child{font-family:ui-monospace,Consolas,monospace}
+.wtable td.v{font-weight:700;color:var(--primary)}
+.wtable tr.changed td.v{animation:flashval .7s ease}
+.wtable tr.grp-row td{background:#f8fafc;font-weight:700;color:var(--muted);font-size:11.5px;
+  letter-spacing:.4px;padding:5px 12px}
+@keyframes flashval{0%{background:var(--peach-soft)}100%{background:transparent}}
+.i2c-charts{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.pick{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.pick .chip{background:#f1f5f9;color:var(--muted);border-color:var(--line);
+  display:inline-flex;gap:5px;align-items:center}
+.pick .chip.sel{background:var(--primary-soft);color:var(--primary);border-color:#c7cef7}
+.pick .chip em{font-style:normal;opacity:.6;font-size:11px}
+.grp{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-top:8px;background:#fbfcfe}
+.grp>summary{cursor:pointer;font-size:12.5px;font-weight:700;color:var(--muted);
+  display:flex;align-items:center;gap:8px}
+.grp>summary .cnt{font-weight:400;opacity:.7}
+.grp .pick{margin-top:8px}
+.wrow{display:grid;grid-template-columns:minmax(120px,1fr) minmax(90px,140px) auto;
+  gap:8px;align-items:center;margin:7px 0}
+.wrow label{color:var(--muted);font-size:12.5px}
+.wrow input,.wrow select{width:100%}
+details.card>summary{list-style:none;cursor:pointer}
+details.card>summary::-webkit-details-marker{display:none}
+details.card>summary::before{content:"▸ ";color:var(--primary)}
+details.card[open]>summary::before{content:"▾ "}
 </style>
 </head>
 <body>
@@ -289,41 +320,106 @@ canvas{width:100%;height:160px;display:block;border-radius:8px;background:#fbfcf
   <!-- ================= I2C ================= -->
   <section class="tab-pane" id="tab-i2c">
     <div class="section-title">I2C 总线(1 路 · 100k/400k/1M)</div>
-    <div class="grid three">
-      <div class="card">
-        <h3>⚙️ 配置与扫描</h3>
-        <div class="ctl"><label>速率</label>
-          <select id="i2cRate"><option value="100">100 kHz</option><option value="400" selected>400 kHz</option>
+
+    <div class="card">
+      <h3>🎯 目标设备</h3>
+      <div class="ctl">
+        <label>速率</label>
+        <select id="i2cRate"><option value="100">100 kHz</option><option value="400" selected>400 kHz</option>
           <option value="1000">1000 kHz</option></select>
-          <button class="btn ghost sm" onclick="i2cApply()">应用</button></div>
-        <button class="btn primary sm" style="width:100%;margin-top:8px" onclick="i2cScan()">🔍 扫描总线</button>
-        <div class="chips" id="i2cDevices"><div class="empty-hint">点击扫描查看设备</div></div>
+        <button class="btn ghost sm" onclick="i2cApply()">应用</button>
+        <label>目标地址</label>
+        <input type="text" id="i2cAddr" value="68" style="width:70px">
+        <span style="color:var(--muted);font-size:12px">HEX · 7bit</span>
+        <button class="btn primary sm" onclick="i2cScan()">🔍 扫描总线</button>
       </div>
-      <div class="card">
-        <h3>📖 读</h3>
-        <div class="ctl"><label>地址 7bit(HEX)</label><input type="text" id="i2cAddr" value="3C" style="width:70px"></div>
-        <div class="ctl"><label>寄存器(HEX)</label><input type="text" id="i2cReg" value="00" style="width:70px"></div>
-        <div class="ctl"><label>长度</label><input type="number" id="i2cLen" value="4" min="1" max="255" style="width:80px"></div>
-        <div class="row">
-          <button class="btn sky sm" onclick="i2cRead()">读寄存器</button>
-          <button class="btn ghost sm" onclick="i2cReadOnly()">直读</button>
-        </div>
+      <div class="chips" id="i2cDevices"><div class="empty-hint">点击扫描查看设备</div></div>
+    </div>
+
+    <div class="card">
+      <h3>🧩 设备定义 <span class="tag">AI 生成 · 可粘贴</span></h3>
+      <div class="desc">定义只说两件事:<b>读哪一块</b>(<code>read</code>)和<b>怎么解码</b>(<code>decode</code>)。
+        页面不猜寄存器含义,只负责轮询、换算和画图。改完点「解析并启用」。</div>
+      <div class="ctl">
+        <label>已保存</label>
+        <select id="i2cDefSel" style="flex:1;max-width:240px"></select>
+        <button class="btn ghost sm" onclick="i2cDefLoad()">载入</button>
+        <button class="btn ghost sm" onclick="i2cDefSave()">保存</button>
+        <button class="btn ghost sm" onclick="i2cDefDel()">删除</button>
       </div>
-      <div class="card">
-        <h3>✍️ 写</h3>
-        <div class="ctl"><label>地址 7bit(HEX)</label><input type="text" id="i2cWAddr" value="3C" style="width:70px"></div>
-        <div class="ctl"><label>寄存器(HEX)</label><input type="text" id="i2cWReg" value="00" style="width:70px"></div>
-        <div class="ctl"><label>数据(HEX)</label><input type="text" id="i2cWData" placeholder="AA BB …"></div>
-        <div class="row">
-          <button class="btn mint sm" onclick="i2cWrite()">写寄存器</button>
-          <button class="btn ghost sm" onclick="i2cWOnly()">直写</button>
-        </div>
+      <textarea id="i2cDef" class="def-area" spellcheck="false"></textarea>
+      <div class="row">
+        <button class="btn primary sm" onclick="i2cDefApply()">✓ 解析并启用</button>
+        <button class="btn peach sm" onclick="i2cCopyPrompt()">📋 复制给 AI 的提示词</button>
+        <button class="btn ghost sm" onclick="i2cDefReset()">恢复内置 MPU6050</button>
+        <span class="badge" id="i2cDefState">未解析</span>
       </div>
-      <div class="card" style="grid-column:1/-1">
-        <h3>📋 日志</h3>
-        <div class="log" id="i2cLog"><div class="dim">操作记录…</div></div>
+      <div class="note">
+        <b>接一个新器件</b>:点「📋 复制给 AI 的提示词」,把提示词 + 数据手册的
+        <b>寄存器映射表 / 寄存器描述 / 典型应用初始化</b>章节一起发给 AI,
+        再把它给的 JSON 粘回上面的框,点「解析并启用」。<br>
+        <b>可用助手</b>(多字节默认大端,末参传 <code>'le'</code> 改小端):<br>
+        <code>u8(b,o)</code> <code>s8(b,o)</code> <code>u16(b,o,e)</code> <code>s16(b,o,e)</code>
+        <code>u24(b,o,e)</code> <code>s24(b,o,e)</code> <code>u32(b,o,e)</code> <code>s32(b,o,e)</code>
+        <code>float32(b,o,e)</code> <code>bits(b,o,起始位,位数)</code> <code>ascii(b,o,len)</code><br>
+        <b>read</b>:单块给 <code>{reg,len}</code>;需要读多块时给 <code>[{reg,len,key}]</code>,
+        此时 <code>decode</code> 收到按 <code>key</code> 索引的对象。<b>units</b> 决定纵轴分组与单位,<b>plot</b> 决定哪些量进曲线。
       </div>
     </div>
+
+    <div class="card">
+      <h3>📈 实时监视</h3>
+      <div class="ctl">
+        <button class="btn mint sm" id="i2cPollBtn" onclick="i2cPollToggle()">▶ 开始轮询</button>
+        <button class="btn ghost sm" onclick="i2cReadOnce()">读一次</button>
+        <label>周期</label>
+        <input type="number" id="i2cInterval" value="20" min="5" max="5000" style="width:80px">
+        <span style="color:var(--muted)">ms</span>
+        <button class="btn peach sm" onclick="i2cInitSeq()">⚡ 初始化设备</button>
+        <button class="btn sky sm" onclick="i2cReadAll()">📖 读全部量</button>
+        <button class="btn ghost sm" onclick="i2cCsv()">⬇ 导出 CSV</button>
+        <button class="btn ghost sm" onclick="i2cClearData()">清空数据</button>
+      </div>
+      <div class="note" id="i2cPlanHint">—</div>
+      <div class="result" id="i2cRaw">原始: -</div>
+      <div class="result" id="i2cAllBox" style="display:none"></div>
+      <table class="wtable" id="i2cTable"><tbody><tr><td class="dim" colspan="3">点「读一次」或「开始轮询」查看结果</td></tr></tbody></table>
+      <div class="i2c-charts" id="i2cCharts"></div>
+    </div>
+
+    <div class="card">
+      <h3>✍️ 写入 <span class="tag" id="i2cWriteTag">-</span></h3>
+      <div class="desc">可写的量和命令都由定义声明。<b>位域/枚举走「读-改-写」</b>,
+        只改目标 bit,不会破坏同寄存器其它 bit;写后自动读回校验。标 ⚠ 的命令会二次确认。</div>
+      <div id="i2cWriteBox"><div class="empty-hint">该定义没有声明可写的量或命令</div></div>
+    </div>
+
+    <details class="card">
+      <summary>🛠️ 手动读写(查手册时的手电筒)</summary>
+      <div class="grid" style="margin-top:12px">
+        <div>
+          <h3>📖 读</h3>
+          <div class="ctl"><label>寄存器(HEX)</label><input type="text" id="i2cReg" value="00" style="width:70px"></div>
+          <div class="ctl"><label>长度</label><input type="number" id="i2cLen" value="4" min="1" max="255" style="width:80px"></div>
+          <div class="row">
+            <button class="btn sky sm" onclick="i2cRead()">读寄存器</button>
+            <button class="btn ghost sm" onclick="i2cReadOnly()">直读</button>
+          </div>
+        </div>
+        <div>
+          <h3>✍️ 写</h3>
+          <div class="ctl"><label>寄存器(HEX)</label><input type="text" id="i2cWReg" value="00" style="width:70px"></div>
+          <div class="ctl"><label>数据(HEX)</label><input type="text" id="i2cWData" placeholder="AA BB …"></div>
+          <div class="row">
+            <button class="btn mint sm" onclick="i2cWrite()">写寄存器</button>
+            <button class="btn ghost sm" onclick="i2cWOnly()">直写</button>
+          </div>
+        </div>
+      </div>
+      <div class="hr"></div>
+      <h3>📋 日志</h3>
+      <div class="log" id="i2cLog"><div class="dim">操作记录…</div></div>
+    </details>
   </section>
 
   <!-- ================= SPI ================= -->
@@ -590,6 +686,7 @@ async function disconnect(){
   if(closing)return closing;
   conn=false;
   failAll(new Error('已断开'));
+  i2cStopPoll();
   const oldReader=reader,oldWriter=writer,oldPort=port;
   reader=null;writer=null;port=null;
   rxBuf='';
@@ -1081,6 +1178,11 @@ async function uartStream(n,on){ const r=await sendCommand(`UART STREAM USART${n
 
 /* ==================== I2C ==================== */
 function i2cH(v){ return parseInt(v||'0',16); }
+function i2cHex(v){ return (v & 0xFF).toString(16).toUpperCase().padStart(2,'0'); }
+function i2cSleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function lsGet(k,d){ try{ const v=localStorage.getItem(k); return v===null?d:v; }catch(e){ return d; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); return true; }catch(e){ return false; } }
+
 async function i2cApply(){
   const r=await sendCommand(`I2C CFG ${$('i2cRate').value}`);
   r[0].startsWith('OK')?toast(`I2C 速率 ${$('i2cRate').value}kHz`,'success'):toast('失败','error');
@@ -1091,7 +1193,8 @@ async function i2cScan(){
   const devs=r.slice(1).filter(l=>l.trim().startsWith('0x')).map(l=>l.trim().toUpperCase());
   $('i2cDevices').innerHTML = devs.length
     ? devs.map(d=>`<span class="chip" onclick="$('i2cAddr').value='${d.slice(2)}'">${d}</span>`).join('')
-    : '<div class="empty-hint">未找到设备</div>';
+    : '<div class="empty-hint">未找到设备 —— 检查 SDA=GPIO12 / SCL=GPIO13 接线、器件供电、上拉强度;'
+      +'长总线可外接 4.7k 上拉,或把速率降到 100kHz 再试</div>';
   addLog('i2cLog',`扫描: ${devs.length?('找到 '+devs.join(', ')):'无设备'}`,devs.length?'rx':'err');
   toast(devs.length?`找到 ${devs.length} 个设备`:'无设备','info');
 }
@@ -1101,6 +1204,7 @@ async function i2cRead(){
   if(r[0].startsWith('OK')){
     const hex=(r[0].split('HEX:')[1]||'');
     addLog('i2cLog',`读 0x${addr.toString(16).toUpperCase()} reg=0x${reg.toString(16).toUpperCase()} → ${hex}`,'rx');
+    $('i2cRaw').textContent='原始: '+hex.replace(/(..)/g,'$1 ').trim();
     toast('读取成功','success');
   } else toast('读取失败: '+errCode(r[0]),'error');
 }
@@ -1110,14 +1214,1077 @@ async function i2cReadOnly(){
   r[0].startsWith('OK')?toast('直读成功','success'):toast('直读失败: '+errCode(r[0]),'error');
 }
 async function i2cWrite(){
-  const addr=i2cH($('i2cWAddr').value),reg=i2cH($('i2cWReg').value),data=$('i2cWData').value.trim();
+  const addr=i2cH($('i2cAddr').value),reg=i2cH($('i2cWReg').value),data=$('i2cWData').value.trim();
   const r=await sendCommand(`I2C WRITE 0x${addr.toString(16).toUpperCase()} 0x${reg.toString(16).toUpperCase()} ${data}`);
   r[0].startsWith('OK')?(addLog('i2cLog',`写 0x${addr.toString(16).toUpperCase()} reg=0x${reg.toString(16).toUpperCase()} ${data}`,'tx'),toast('写入成功','success')):toast('写入失败: '+errCode(r[0]),'error');
 }
 async function i2cWOnly(){
-  const addr=i2cH($('i2cWAddr').value),data=$('i2cWData').value.trim();
+  const addr=i2cH($('i2cAddr').value),data=$('i2cWData').value.trim();
   const r=await sendCommand(`I2C WRONLY 0x${addr.toString(16).toUpperCase()} ${data}`);
   r[0].startsWith('OK')?toast('直写成功','success'):toast('直写失败: '+errCode(r[0]),'error');
+}
+
+/* ---------- 设备定义:取值助手 ---------- */
+const I2C_HELPERS={
+  u8:(b,o)=>b[o],
+  s8:(b,o)=>{const v=b[o];return v>=0x80?v-0x100:v;},
+  u16:(b,o,e)=>e==='le'?(b[o]|(b[o+1]<<8)):((b[o]<<8)|b[o+1]),
+  s16:(b,o,e)=>{const v=I2C_HELPERS.u16(b,o,e);return v>=0x8000?v-0x10000:v;},
+  u24:(b,o,e)=>e==='le'?(b[o]|(b[o+1]<<8)|(b[o+2]<<16)):((b[o]<<16)|(b[o+1]<<8)|b[o+2]),
+  s24:(b,o,e)=>{const v=I2C_HELPERS.u24(b,o,e);return v>=0x800000?v-0x1000000:v;},
+  u32:(b,o,e)=>e==='le'?((b[o+3]<<24)|(b[o+2]<<16)|(b[o+1]<<8)|b[o])|0:((b[o]<<24)|(b[o+1]<<16)|(b[o+2]<<8)|b[o+3])|0,
+  s32:(b,o,e)=>I2C_HELPERS.u32(b,o,e)|0,
+  float32:(b,o,e)=>{const dv=new DataView(new ArrayBuffer(4));
+    dv.setUint8(0,b[o]);dv.setUint8(1,b[o+1]);dv.setUint8(2,b[o+2]);dv.setUint8(3,b[o+3]);
+    return dv.getFloat32(0,e==='le');},
+  bits:(b,o,s,n)=>(b[o]>>s)&((1<<n)-1),
+  ascii:(b,o,n)=>{let s='';for(let i=0;i<n;i++){const c=b[o+i];s+=c>=32&&c<127?String.fromCharCode(c):'.';}return s;},
+};
+
+/* 内置默认定义:数值取自可运行的 demo/demo_mpu6050_iic.html
+   fields 是「该器件所有可读的量」的目录 —— 读哪些由用户在页面上勾选。 */
+const I2C_DEF_DEFAULT=`{
+  name: 'MPU6050', addr: 0x68,          // addr 只是初值,读写统一用左上角「目标地址」
+  init: [ [0x6B,0x00], [0x1A,0x03],     // 唤醒 + DLPF 44Hz
+          [0x1C,0x00], [0x1B,0x00] ],   // 加速度 ±2g / 陀螺 ±250°/s(与下面 div 一致)
+
+  fields: [
+    // group 决定在页面上归到哪一组;写入面板也按 group 分组
+    // key 唯一,label 是显示名,div 表示「原始值 ÷ div」(即数据手册的 LSB/单位)
+
+    // ---- 实时数据(默认勾选、默认画曲线)----
+    { group:'实时数据', key:'ax',   label:'加速度 X', unit:'g',   reg:0x3B, len:2, type:'s16', div:16384, plot:true },
+    { group:'实时数据', key:'ay',   label:'加速度 Y', unit:'g',   reg:0x3D, len:2, type:'s16', div:16384, plot:true },
+    { group:'实时数据', key:'az',   label:'加速度 Z', unit:'g',   reg:0x3F, len:2, type:'s16', div:16384, plot:true },
+    { group:'实时数据', key:'temp', label:'温度',     unit:'°C',  reg:0x41, len:2, type:'s16', div:340, bias:36.53, plot:true },
+    { group:'实时数据', key:'gx',   label:'角速度 X', unit:'°/s', reg:0x43, len:2, type:'s16', div:131, plot:true },
+    { group:'实时数据', key:'gy',   label:'角速度 Y', unit:'°/s', reg:0x45, len:2, type:'s16', div:131, plot:true },
+    { group:'实时数据', key:'gz',   label:'角速度 Z', unit:'°/s', reg:0x47, len:2, type:'s16', div:131, plot:true },
+
+    // ---- 状态与配置:poll:false = 不进轮询,只在「📖 读全部量」时读一次 ----
+    { group:'状态', poll:false, key:'who', label:'WHO_AM_I', desc:'固定 0x68(兼容件 0x70)',
+      reg:0x75, len:1, type:'u8' },
+    { group:'状态', poll:false, key:'sleep', label:'睡眠位', desc:'PWR_MGMT_1 bit6 SLEEP',
+      reg:0x6B, len:1, type:'bits', bit:6, bits:1, enum:{0:'运行',1:'睡眠'},
+      write:true },
+    { group:'配置', poll:false, key:'arange', label:'加速度量程', desc:'ACCEL_CONFIG bit3-4 AFS_SEL',
+      reg:0x1C, len:1, type:'bits', bit:3, bits:2,
+      enum:{0:'±2g',1:'±4g',2:'±8g',3:'±16g'}, write:true },
+    { group:'配置', poll:false, key:'grange', label:'陀螺量程', desc:'GYRO_CONFIG bit3-4 FS_SEL',
+      reg:0x1B, len:1, type:'bits', bit:3, bits:2,
+      enum:{0:'±250°/s',1:'±500°/s',2:'±1000°/s',3:'±2000°/s'}, write:true },
+    { group:'配置', poll:false, key:'dlpf', label:'低通滤波', desc:'CONFIG bit0-2 DLPF_CFG(0=260Hz … 6=5Hz)',
+      reg:0x1A, len:1, type:'bits', bit:0, bits:3, write:true },
+    { group:'配置', poll:false, key:'srate', label:'采样分频', desc:'SMPLRT_DIV,采样率 = 1kHz/(1+该值)',
+      reg:0x19, len:1, type:'u8', write:true },
+    { group:'配置', poll:false, key:'pll', label:'时钟源', desc:'PWR_MGMT_1 bit0-2 CLKSEL',
+      reg:0x6B, len:1, type:'bits', bit:0, bits:3,
+      enum:{0:'内部8MHz',1:'PLL X轴陀螺',2:'PLL Y轴陀螺',3:'PLL Z轴陀螺'} },
+  ],
+
+  // 写-only 之类的动作命令:一键发送固定字节
+  commands: [
+    { key:'wake',      label:'唤醒',       reg:0x6B, data:[0x00] },
+    { key:'reset',     label:'复位所有寄存器', reg:0x6B, data:[0x80], confirm:true },
+    { key:'reset_sig', label:'复位信号通路',   reg:0x68, data:[0x07], confirm:true },
+  ],
+}`;
+
+/* 给 AI 的提示词模板:{EXAMPLE} 会被替换成当前编辑框里的定义(当作已验证的样例) */
+const I2C_PROMPT=`===== 你的任务 =====
+把下面的数据手册变成一份「设备定义」(一个 JS 对象字面量)。
+用户会把定义粘进网页,然后依次点「解析并启用」→「⚡ 初始化设备」→「▶ 开始轮询」,
+就应当立刻看到解码后的数值和实时曲线 —— 中间不需要任何手工配置。
+所以请一次写对:地址、位段、换算系数、初始化序列,一个都不能猜。
+
+===== 运行环境与边界(必读)=====
+这是一块 IO Dock 扩展板(RP2040)的 I2C 工作台网页。板子只提供两条 I2C 原语:
+  I2C READ  <7位地址> <寄存器> <n>           从该寄存器起连读 n 字节
+  I2C WRITE <7位地址> <寄存器> <数据字节...>   写寄存器地址 + 数据
+含义:每次只能读「一段连续的寄存器」。你无法指定「先写 A 再读 B」这种自定义时序,
+也无法把不连续的多段拼成一次读。
+
+网页已经替你做好了下面这些事,定义里不要重复表达:
+  · 把地址相邻的字段自动合并成尽量少的 I2C READ —— 你只要把每个字段的 reg 和 len 写对
+  · 每帧自动解码、线性换算、显示数值表、按单位自动分组画曲线、导出 CSV、值变化高亮
+  · 写入时自动做反向换算(用户填物理值 → 算原始值 → 按 type/endian 编码成字节)
+  · 位域写入自动「读-改-写」,只动你声明的 bit,不碰同一寄存器里的其它 bit
+  · 写入后自动读回校验
+你的职责只有一件:把它读什么、怎么换算、怎么初始化,准确写清楚。
+
+===== 输出格式 =====
+只输出一个 JS 对象字面量。不要 markdown 代码围栏,不要 import/require,不要写解释文字。
+（解释放在 JSON 之后的「单独告诉我」部分,见文末）
+
+{
+  name: 'MPU6050',
+  addr: 0x68,
+  init: [ [0x6B,0x00], [0x1A,0x03] ],
+  fields: [
+    { group:'实时数据', key:'ax',   label:'加速度 X', unit:'g',  reg:0x3B, len:2, type:'s16', div:16384, plot:true },
+    { group:'实时数据', key:'temp', label:'温度',     unit:'°C', reg:0x41, len:2, type:'s16', div:340, bias:36.53, plot:true },
+    { group:'状态', poll:false, key:'who', label:'WHO_AM_I', desc:'固定 0x68(兼容件 0x70)',
+      reg:0x75, len:1, type:'u8' },
+    { group:'配置', poll:false, key:'arange', label:'加速度量程', desc:'ACCEL_CONFIG bit3-4 AFS_SEL',
+      reg:0x1C, len:1, type:'bits', bit:3, bits:2,
+      enum:{0:'±2g',1:'±4g',2:'±8g',3:'±16g'}, write:true },
+    { group:'配置', poll:false, key:'srate', label:'采样分频', desc:'采样率 = 1kHz/(1+该值)',
+      reg:0x19, len:1, type:'u8', write:true },
+  ],
+  commands: [
+    { key:'wake',  label:'唤醒',          reg:0x6B, data:[0x00] },
+    { key:'reset', label:'复位所有寄存器', reg:0x6B, data:[0x80], confirm:true },
+  ],
+}
+
+===== 顶层字段 =====
+- name     器件显示名。也是「保存定义」和 CSV 文件名的来源
+- addr     7 位地址(十六进制)。有多个可选地址时给最常见的那个;
+           若地址由引脚决定,在「单独告诉我」里列出全部可选值
+- init     可选。让器件从「上电/复位态」进入「能出数据的状态」所需的写序列。
+           数组按顺序执行,普通一步写成 [寄存器, 数据字节...];
+           该步之后需要等待的写成 { reg:0x1A, val:0x03, delay:10 }(delay 单位 ms);
+           多字节一次写用 { reg:0xF4, data:[0x27,0x01] }
+           —— 凡是数据手册写了「唤醒」「退出睡眠」「使能测量」「选择时钟源」
+           「设置量程」「设置分辨率」的寄存器,都在这里写掉
+- fields   必填。可读量目录(见下)。要覆盖数据手册里所有有意义的可读量
+- commands 可选。写-only 之类的动作命令(见「commands 怎么写」)
+
+===== fields 每一项:属性全表 =====
+把数据手册里每一个「能读出来变成物理量或状态」的寄存器都写一条。逐项属性:
+
+key      必填。唯一标识,英文/数字/下划线,不要重复。CSV 表头用的就是它
+label    必填。中文显示名,用户就是靠它认的,要能看懂("加速度 X" 而不是 "ax")
+group    强烈建议。分组名,例如 实时数据 / 状态 / 配置 / 校准 / 报警。
+         数值表会按这个顺序分组显示,写入面板也按它分组。
+         寄存器多的器件(几十上百个)不分组基本没法看
+desc     建议。一句话说明,写位段含义和取值含义,例如
+         'ACCEL_CONFIG bit3-4 AFS_SEL' 或 '0=260Hz … 6=5Hz'。会显示为悬停提示
+unit     物理单位(g / °C / hPa / mV / % / °/s …)。字符串型的量可以省
+reg      该量所在的起始寄存器(十六进制)
+len      字节数。省略时按 type 推导:
+         u8/s8=1、u16/s16=2、u24/s24=3、u32/s32/float32=4、bits=1、ascii=1(需自己给 len)
+type     取值只能是:u8 s8 u16 s16 u24 s24 u32 s32 float32 bits ascii
+endian   字节序。省略 = 大端(MSB first);小端(LSB first)写 'le'
+bit      仅 type:'bits' 时必填:该位段在寄存器里的起始位(0 = 最低位)
+bits     仅 type:'bits' 时必填:该位段的位宽
+mul      线性换算的乘数,省略 = 1
+div      线性换算的除数,省略 = 1
+bias     线性换算的偏置,省略 = 0
+         最终数值 = 原始值 × mul ÷ div + bias
+         —— 请直接照数据手册的 LSB 单位抄:
+            1 mg/LSB → mul:0.001
+            0.0625 °C/LSB → mul:0.0625
+            16384 LSB/g → div:16384
+            36.53 + raw/340 → div:340, bias:36.53
+enum     值到文字的映射,如 {0:'±2g',1:'±4g',2:'±8g',3:'±16g'}。
+         用于量程、状态位、错误码。命中不到映射时页面会回退显示原始数字
+plot     是否画实时曲线。实时数据设 true;状态/配置/校准类不要设
+poll     设为 false 表示「不进轮询」,只在用户点「📖 读全部量」时读一次。
+         状态、配置、ID、校准这类不必每帧读的量请都设 poll:false,
+         这样每帧的 I2C 读取次数才压得住(50Hz 轮询时每多一段读取都会拖慢帧率)
+write    设为 true 表示这个量用户可以直接写(见「写入怎么声明」)
+deps     仅非线性器件用,声明这个量需要读哪几段寄存器(见下文)
+calc     仅非线性器件用,自定义换算函数(见下文)
+
+===== 关键决策:轮询 / 曲线 / 分组 =====
+这三个标记决定了用户看到的体验,请认真判断:
+
+1. poll(默认 true)—— 每帧都读
+   · 要设 true 的:实时测量值。这类量通常集中在同一段连续寄存器里,合并后只花一次读取
+   · 要设 false 的:WHO_AM_I / ID、量程配置、滤波配置、状态标志、校准系数。
+     它们不变或不必每帧看,设 false 能让轮询快很多,用户仍可用「读全部量」随时查看
+
+2. plot(默认不设=false)—— 是否画曲线
+   · 设 true:连续变化的物理量(加速度、角速度、温度、压力、电压、电流…)
+   · 不要设:枚举/状态/配置/字符串。"±2g" 这种画成曲线没有意义
+
+3. group —— 分组名
+   · 建议固定用这几类:实时数据 / 状态 / 配置 / 校准(可再加 报警)
+   · 按物理意义分,不要按寄存器地址顺序机械地分
+
+一条经验:如果所有实时数据都在一段连续寄存器里 + 其余都设 poll:false,
+那么每帧只需 1 次 I2C READ,轮询会非常流畅。请尽量往这个目标写。
+
+===== 写入怎么声明 =====
+只给需要用户改的量加 write:true(量程、采样率、滤波、阈值、开关)。两条硬规则:
+
+规则 1:该量只占寄存器的一部分(有位段)→ 必须用 type:'bits' + bit/bits 声明
+        例:{ group:'配置', poll:false, key:'arange', label:'加速度量程',
+              reg:0x1C, len:1, type:'bits', bit:3, bits:2,
+              enum:{0:'±2g',1:'±4g',2:'±8g',3:'±16g'}, write:true }
+        页面会:先读 0x1C → 清掉 bit3-4 → 填新值 → 写回。
+        同一寄存器里 bit0-2 的其它配置完全不受影响 —— 这正是必须声明位段的原因。
+
+规则 2:该量占满整个寄存器 → 用整数类型(u8/s16/…),页面直接写整个寄存器
+        例:{ group:'配置', poll:false, key:'srate', label:'采样分频',
+              reg:0x19, len:1, type:'u8', write:true }
+
+两种情况都请配好 enum 和 mul/div/bias:页面会自动做反向换算。
+用户在下拉框选「±8g」→ 页面自己算出位值 2;用户填 4 → 页面自己算出 0x40 0x00。
+你不需要提供写入格式,只要把 bit 和换算系数写对。
+
+注意:带 calc 的量不可写;float32 不可写(会明确报错,不会静默失败)。
+
+===== commands 怎么写 =====
+用于「往一个寄存器写固定字节就完成一件事」的操作:软复位、复位信号通路、
+开始单次转换、触发校准、清空 FIFO、进入低功耗…写成:
+
+  commands: [
+    { key:'wake',  label:'唤醒',           reg:0x6B, data:[0x00] },
+    { key:'reset', label:'复位所有寄存器',  reg:0x6B, data:[0x80], confirm:true },
+  ]
+
+- data    要写的字节数组,必须是数字数组(不要写成字符串 '0x80')
+- confirm 设 true 表示有破坏性,页面会弹确认框并在按钮上标 ⚠。
+          软复位、复位信号通路、触发校准、清空数据之类都要设 true;
+          只是让器件开始工作的(如唤醒、开始转换)可以不设
+
+===== 非线性 / 需要校准的器件 =====
+若换算涉及补偿算法、跨字节打包、或依赖校准寄存器读出来的系数,
+单个 field 改用 deps + calc:
+
+  { group:'实时数据', key:'press', label:'气压', unit:'hPa', plot:true,
+    deps: { cal:{reg:0x88,len:24}, data:{reg:0xF7,len:3} },
+    calc: x => (在这里写补偿计算,用 x.cal 和 x.data 取字节) }
+
+- deps  声明这个量需要读哪几段寄存器,每段给 reg 和 len(可以有多段,页面会一并读)
+- calc  收到一个按 deps 的键索引的对象,每个值是 Uint8Array,长度就是 deps 里写的 len
+- calc 里能用下面这些助手(普通 JS 运算、Math.*、局部变量也都能用):
+    u8(b,o)  s8(b,o)                 1 字节 无符号/有符号
+    u16(b,o,e)  s16(b,o,e)           2 字节
+    u24(b,o,e)  s24(b,o,e)           3 字节
+    u32(b,o,e)  s32(b,o,e)           4 字节
+    float32(b,o,e)                   IEEE754 单精度
+    bits(b,o,起始位,位数)             取寄存器内连续若干 bit
+    ascii(b,o,len)                   定长字符串
+  o = 字节偏移(0 表示该 Uint8Array 的第 1 个字节)
+  e = 字节序,默认大端;要小端就传字符串 'le'
+- 不要用任何其它未列出的函数,也不要试图发 I2C 命令 —— calc 是纯计算
+
+===== 三个典型形态(寄存器值用占位符,只为说明写法,请勿照抄)=====
+[A] 单值传感器 —— 一个寄存器,无需初始化
+  { name:'某温度传感器', addr:0x48,
+    fields:[ { group:'实时数据', key:'temp', label:'温度', unit:'°C',
+               reg:0x00, len:2, type:'s16', mul:0.0625, plot:true } ] }
+
+[B] 多轴 IMU —— 连续数据块 + 可配置量程(完整例子见上方输出格式,或文末的已实测定义)
+  要点:7 个实测量都在 0x3B..0x48 连续区间 → 每帧 1 次读取;
+        量程/滤波/ID 全部 poll:false;量程用 bits + enum + write
+
+[C] 需要校准补偿 —— 两段读取 + 非线性换算
+  { name:'某压力传感器', addr:0x76,
+    init:[ {reg:0xF4, data:[0x27,0x01]} ],
+    fields:[
+      { group:'实时数据', key:'press', label:'气压', unit:'hPa', plot:true,
+        deps:{ cal:{reg:0x88,len:24}, data:{reg:0xF7,len:3} },
+        calc: x => (用 x.cal 的系数补偿 x.data 的原始值) },
+      { group:'状态', poll:false, key:'id', label:'芯片 ID', reg:0xD0, len:1, type:'u8' },
+    ] }
+
+===== 提交前逐条自查 =====
+1. 输出是裸对象字面量吗?没有 markdown 围栏、没有 import、没有多余文字?
+2. fields 里每个字段的 reg / len / type 与数据手册逐条对上了吗?
+3. 字节序对不对?数据手册写 MSB first 就是默认(大端),写 LSB first 要加 endian:'le'。
+   猜错的典型表现是数值差 256 倍左右
+4. 器件上电是否处于睡眠/复位/待机态?如果是,唤醒那一步写进 init 了吗?
+   (漏了会一直读回常数,这是最常见的「读出来不动」)
+5. init 里的延时给足了吗?复位、软复位、触发测量之后常有最小等待时间
+6. 有没有往只读寄存器写?有没有写会自清的位?
+7. init 里设的量程,与 fields 里的 div/mul 一致吗?
+   例如 init 把量程设成 ±2g(16384 LSB/g),div 就必须是 16384,否则数值会差整数倍
+8. 换算系数是不是照数据手册的 LSB/单位抄的?没有硬凑成整数倍吧?
+9. 非线性器件用 deps + calc 了吗?没有硬塞进 mul/div 吧?
+10. 实时测量值都 plot:true 了吗?状态/配置/ID 都 poll:false 了吗?
+11. 每个字段都有 label 和 group 吗?key 有没有重复?
+12. 位段字段都给了 bit 和 bits 吗?位段是从 0 开始数的吗?
+13. 可写字段符不符合那两条规则(位段必须用 bits;占满寄存器才用整数类型)?
+
+===== 另外请单独告诉我(不要写进 JSON)=====
+- 身份寄存器(ID / WHO_AM_I)的地址和期望值 —— 我要先用它验证通信是否正常
+- 这个地址是否与常见器件冲突,怎么区分
+- 我该怎么确认器件真的在出数据(有没有数据就绪位?需不需要先触发?)
+- 每帧会读几次 I2C、大概能跑到多少 Hz(说明你的 poll/plot/分组是怎么考虑的)
+- 数据手册里含糊、或你没把握的地方,明确标出来,不要编
+
+===== 可参考的已实测定义(MPU6050,已在真机上验证可用)=====
+{{EXAMPLE}}
+
+===== 数据手册 =====
+<<在这里粘贴:寄存器映射表章节 + 寄存器描述章节 + 典型应用/初始化章节 + 灵敏度(量程)表>>
+
+===== 我尤其关心 =====
+<<列出你关心的物理量,例如:三轴加速度(g)、温度(°C)。
+  这些量请设 plot:true;其余可读量也要完整列出,但不用设 plot>>`;
+
+function i2cPromptText(){
+  const cur=$('i2cDef')?$('i2cDef').value.trim():'';
+  // 用替换函数避免 $ 被当作替换模式
+  return I2C_PROMPT.replace('{{EXAMPLE}}', ()=>cur||'(当前编辑框为空)');
+}
+async function i2cCopyPrompt(){
+  const txt=i2cPromptText();
+  try{
+    await navigator.clipboard.writeText(txt);
+    toast('提示词已复制 —— 连同数据手册一起发给 AI','success');
+    return;
+  }catch(e){/* 非安全上下文(file://)会失败,走回退 */}
+  const ta=document.createElement('textarea');
+  ta.value=txt; ta.setAttribute('readonly','');
+  ta.style.cssText='position:fixed;left:-9999px;top:0';
+  document.body.appendChild(ta); ta.select();
+  let done=false;
+  try{ done=document.execCommand('copy'); }catch(e){}
+  ta.remove();
+  done?toast('提示词已复制 —— 连同数据手册一起发给 AI','success')
+      :toast('复制失败,请从 Doc/I2C_Workbench_Design.md 取模板','error');
+}
+
+/* ---------- 设备定义:解析与状态 ---------- */
+const i2c={ def:null, running:false, interval:20, errors:0, maxPoints:250,
+            plotKeys:[], units:{}, keysAll:null, hist:{}, prev:{}, rows:[], t0:0,
+            chartGroups:[], addrWarned:'',
+            mode:'legacy', fieldsAll:null, legacyAllKeys:[], writeLast:{} };
+
+function i2cDefEval(src){
+  const names=Object.keys(I2C_HELPERS);
+  const fn=new Function(...names,'"use strict";return ('+src+');');
+  return fn(...names.map(n=>I2C_HELPERS[n]));
+}
+function i2cTargetAddr(){
+  const raw=String($('i2cAddr').value||'').trim();
+  let a=parseInt(raw,16);
+  if(!Number.isFinite(a))a=0;
+  if(a>0x7F){                       // 8 位地址(如 D0)→ 折算 7 位
+    a>>=1;
+    if(i2c.addrWarned!==raw){ i2c.addrWarned=raw;
+      toast(`地址按 8 位格式输入,已折算为 7 位 0x${a.toString(16).toUpperCase()}`,'info'); }
+  }
+  return a;
+}
+/* ---------- fields 目录 → 读取计划与解码 ---------- */
+const I2C_MAX_RUN=200;   // 响应行受 512B 行缓冲限制,单次读取封顶
+const I2C_TYPE_LEN={u8:1,s8:1,u16:2,s16:2,u24:3,s24:3,u32:4,s32:4,float32:4,bits:1,ascii:1};
+
+function i2cFieldLen(f){
+  if(f.len) return +f.len;
+  return I2C_TYPE_LEN[f.type]||1;
+}
+function i2cFieldSpans(f){
+  if(f.deps&&typeof f.deps==='object'){
+    return Object.keys(f.deps)
+      .map(k=>({reg:+f.deps[k].reg,len:+f.deps[k].len}))
+      .filter(s=>Number.isFinite(s.reg)&&s.len>0);
+  }
+  return Number.isFinite(+f.reg)?[{reg:+f.reg,len:i2cFieldLen(f)}]:[];
+}
+/* 把勾选字段占用的寄存器区间合并成尽量少的连续读取 */
+function i2cPlanRuns(fields){
+  const spans=[];
+  for(const f of fields) for(const s of i2cFieldSpans(f)) spans.push({reg:s.reg,len:s.len});
+  spans.sort((a,b)=>a.reg-b.reg);
+  const runs=[];
+  for(const s of spans){
+    const last=runs[runs.length-1];
+    if(last&&s.reg<=last.reg+last.len) last.len=Math.max(last.len,s.reg+s.len-last.reg);
+    else runs.push({reg:s.reg,len:s.len});
+  }
+  const out=[];
+  for(const r of runs){          // 超长区间拆分,避免单条响应行溢出
+    let reg=r.reg,len=r.len;
+    while(len>I2C_MAX_RUN){ out.push({reg,len:I2C_MAX_RUN}); reg+=I2C_MAX_RUN; len-=I2C_MAX_RUN; }
+    if(len>0) out.push({reg,len});
+  }
+  return out;
+}
+function i2cSlice(buf,reg,len){
+  const a=new Uint8Array(len);
+  for(let i=0;i<len;i++) a[i]=buf[reg+i]|0;
+  return a;
+}
+/* 按 field 的声明取字节并换算;带 deps+calc 的字段交给 calc */
+function i2cFieldValue(f,buf){
+  let bytes;
+  if(f.deps&&typeof f.deps==='object'){
+    bytes={};
+    for(const k in f.deps) bytes[k]=i2cSlice(buf,+f.deps[k].reg,+f.deps[k].len);
+  }else{
+    bytes=i2cSlice(buf,+f.reg,i2cFieldLen(f));
+  }
+  if(typeof f.calc==='function') return f.calc(bytes);
+  const H=I2C_HELPERS;
+  if(f.type==='ascii') return H.ascii(bytes,0,bytes.length);
+  let raw;
+  if(f.type==='bits') raw=H.bits(bytes,0,+f.bit,+f.bits);
+  else raw=H[f.type](bytes,0,f.endian||'be');
+  if(f.enum&&Object.prototype.hasOwnProperty.call(f.enum,raw)) return f.enum[raw];
+  return raw*(f.mul===undefined?1:f.mul)/(f.div||1)+(f.bias||0);
+}
+
+/* ---------- 写入 ---------- */
+async function i2cWriteRegBytes(addr,reg,bytes){
+  const r=await sendCommand(`I2C WRITE 0x${i2cHex(addr)} 0x${i2cHex(reg)} ${bytes.map(i2cHex).join(' ')}`);
+  if(!r[0].startsWith('OK')) throw new Error(errCode(r[0])||'写失败');
+}
+/* 物理值 → 原始整数(线性换算的反向) */
+function i2cRawFromValue(f,value){
+  return ((value-(f.bias||0))*(f.div||1))/(f.mul===undefined?1:f.mul);
+}
+/* 物理值 → 原始整数 → 字节(按 type/endian,并夹到类型范围) */
+function i2cEncodeRaw(f,raw){
+  const n=I2C_TYPE_LEN[f.type]||0;
+  if(!n||f.type==='float32'||f.type==='bits'||f.type==='ascii')
+    throw new Error(`类型 ${f.type} 不支持写入`);
+  const bits=n*8, signed=f.type[0]==='s';
+  const lo=signed?-Math.pow(2,bits-1):0, hi=signed?Math.pow(2,bits-1)-1:Math.pow(2,bits)-1;
+  let v=Math.round(raw);
+  if(v<lo||v>hi){ addLog('i2cLog',`值 ${v} 超出 ${f.type} 范围 [${lo},${hi}],已夹紧`,'err'); }
+  v=Math.max(lo,Math.min(hi,v));
+  if(v<0) v+=Math.pow(2,bits);
+  const out=[];
+  if(f.endian==='le'){ for(let i=0;i<n;i++) out.push(Math.floor(v/Math.pow(2,8*i))&0xFF); }
+  else { for(let i=n-1;i>=0;i--) out.push(Math.floor(v/Math.pow(2,8*i))&0xFF); }
+  return out;
+}
+async function i2cFieldWrite(key,value){
+  if(!requireConn())return;
+  const f=(i2c.fieldsAll||[]).find(x=>x.key===key);
+  if(!f){ toast('找不到字段 '+key,'error'); return; }
+  const addr=i2cTargetAddr();
+  try{
+    let reg,bytes,how;
+    if(typeof f.calc==='function') throw new Error('calc 字段不支持写入');
+    if(f.type==='bits'){
+      if((i2cFieldLen(f)||1)!==1) throw new Error('多字节位域暂不支持写入');
+      // 读-改-写:只动目标位域
+      const cur=(await i2cReadRaw(addr,+f.reg,1))[0];
+      const mask=((1<<(+f.bits))-1)<<(+f.bit);
+      const nv=((cur&~mask)|(((+value)<<(+f.bit))&mask))&0xFF;
+      reg=+f.reg; bytes=[nv];
+      how=`0x${i2cHex(cur)} → 0x${i2cHex(nv)}(只改 bit${+f.bit}..${+f.bit+ +f.bits-1})`;
+    }else{
+      reg=+f.reg;
+      bytes=i2cEncodeRaw(f, i2cRawFromValue(f,value));
+      how=`← ${bytes.map(i2cHex).join(' ')}`;
+    }
+    await i2cWriteRegBytes(addr,reg,bytes);
+    addLog('i2cLog',`写入 ${i2cLabelOf(key)} @0x${i2cHex(reg)} ${how}`,'tx');
+    // 读回校验
+    const back=await i2cReadRaw(addr,reg,bytes.length);
+    const buf={}; Array.from(back).forEach((b,i)=>{ buf[reg+i]=b; });
+    const v=i2cFieldValue(f,buf);
+    i2c.writeLast[key]=v;
+    addLog('i2cLog',`读回 ${i2cLabelOf(key)} = ${i2cFmt(v)}${i2c.units[key]||''}`,'rx');
+    toast(`已写入 ${i2cLabelOf(key)} = ${i2cFmt(v)}${i2c.units[key]||''}`,'success');
+    i2cRenderWrite();
+  }catch(e){
+    addLog('i2cLog','写入失败: '+e.message,'err');
+    toast('写入失败: '+e.message,'error');
+  }
+}
+async function i2cRunCommand(key){
+  if(!requireConn())return;
+  const c=((i2c.def&&i2c.def.commands)||[]).find(x=>x.key===key);
+  if(!c){ toast('找不到命令 '+key,'error'); return; }
+  const data=Array.isArray(c.data)?c.data:(c.val!==undefined?[c.val]:[]);
+  if(!data.length||!Number.isFinite(+c.reg)){ toast(`命令 ${key} 缺少 reg/data`,'error'); return; }
+  if(c.confirm&&!confirm(`执行「${c.label||key}」?\n将向 0x${i2cHex(+c.reg)} 写 ${data.map(i2cHex).join(' ')}`))return;
+  try{
+    await i2cWriteRegBytes(i2cTargetAddr(),+c.reg,data);
+    addLog('i2cLog',`命令 ${c.label||key}: 0x${i2cHex(+c.reg)} ← ${data.map(i2cHex).join(' ')}`,'tx');
+    toast(`已执行 ${c.label||key}`,'success');
+  }catch(e){
+    addLog('i2cLog',`命令 ${c.label||key} 失败: ${e.message}`,'err');
+    toast('执行失败: '+e.message,'error');
+  }
+}
+function i2cWriteRow(f){
+  const row=document.createElement('div'); row.className='wrow';
+  const lab=document.createElement('label');
+  lab.textContent=(f.label||f.key)+(f.unit?`(${f.unit})`:'');
+  lab.title=(f.desc?f.desc+' · ':'')+`reg 0x${i2cHex(+f.reg)}`+(f.type==='bits'?` bit${f.bit}..${+f.bit+ +f.bits-1}`:'');
+  row.appendChild(lab);
+
+  const cur=i2c.writeLast[f.key];
+  let ctl;
+  if(f.type==='bits'&&f.enum){
+    ctl=document.createElement('select');
+    for(const k of Object.keys(f.enum)){
+      const o=document.createElement('option'); o.value=k; o.textContent=f.enum[k]; ctl.appendChild(o);
+    }
+    if(cur!==undefined&&f.enum[cur]!==undefined) ctl.value=String(cur);
+  }else{
+    ctl=document.createElement('input');
+    ctl.type='number'; ctl.step='any';
+    if(f.type==='bits'){ ctl.min=0; ctl.max=(1<<(+f.bits))-1; ctl.step=1; }
+    if(typeof cur==='number') ctl.value=cur;
+    else ctl.placeholder=f.type==='bits'?'位值':'数值';
+  }
+  ctl.id='i2cW_'+f.key;
+  row.appendChild(ctl);
+
+  const btn=document.createElement('button');
+  btn.className='btn mint sm'; btn.textContent='写';
+  btn.onclick=()=>{
+    const el=$('i2cW_'+f.key);
+    if(!el||el.value===''){ toast('请先填数值','error'); return; }
+    i2cFieldWrite(f.key, Number(el.value));
+  };
+  row.appendChild(btn);
+  return row;
+}
+function i2cRenderWrite(){
+  const box=$('i2cWriteBox'); if(!box)return;
+  const writable=(i2c.mode==='fields')?(i2c.fieldsAll||[]).filter(f=>f.write&&typeof f.calc!=='function'):[];
+  const cmds=(i2c.def&&Array.isArray(i2c.def.commands))?i2c.def.commands:[];
+  const tag=$('i2cWriteTag');
+  if(tag) tag.textContent=(writable.length||cmds.length)?`${writable.length} 个可写量 · ${cmds.length} 条命令`:'-';
+  if(!writable.length&&!cmds.length){
+    box.innerHTML='<div class="empty-hint">该定义没有声明可写的量或命令'
+      +(i2c.def?'。':';先启用定义。')+'</div>';
+    return;
+  }
+  box.replaceChildren();
+  const groups=new Map();
+  for(const f of writable){ const g=f.group||'未分组'; if(!groups.has(g))groups.set(g,[]); groups.get(g).push(f); }
+  for(const [g,items] of groups){
+    const det=document.createElement('details'); det.className='grp'; det.open=true;
+    const sum=document.createElement('summary');
+    sum.append(document.createTextNode(g));
+    const cnt=document.createElement('span'); cnt.className='cnt'; cnt.textContent=`${items.length} 项`;
+    sum.appendChild(cnt); det.appendChild(sum);
+    for(const f of items) det.appendChild(i2cWriteRow(f));
+    box.appendChild(det);
+  }
+  if(cmds.length){
+    const det=document.createElement('details'); det.className='grp'; det.open=true;
+    const sum=document.createElement('summary');
+    sum.append(document.createTextNode('命令'));
+    const cnt=document.createElement('span'); cnt.className='cnt'; cnt.textContent=`${cmds.length} 条`;
+    sum.appendChild(cnt); det.appendChild(sum);
+    const wrap=document.createElement('div'); wrap.className='pick';
+    for(const c of cmds){
+      const el=document.createElement('span');
+      el.className='chip'+(c.confirm?'':' sel');
+      el.textContent=(c.confirm?'⚠ ':'▶ ')+(c.label||c.key);
+      el.title=`0x${i2cHex(+c.reg)} ← ${(c.data||[]).map(i2cHex).join(' ')}`;
+      el.onclick=()=>i2cRunCommand(c.key);
+      wrap.appendChild(el);
+    }
+    det.appendChild(wrap);
+    box.appendChild(det);
+  }
+}
+
+function i2cDefApply(silent){
+  const src=$('i2cDef').value;
+  let def;
+  try{ def=i2cDefEval(src); }
+  catch(e){
+    $('i2cDefState').textContent='解析失败';
+    addLog('i2cLog','定义解析失败: '+e.message,'err');
+    toast('定义解析失败: '+e.message,'error');
+    return false;
+  }
+  if(!def||typeof def!=='object'){ toast('定义必须是一个对象 {…}','error'); return false; }
+
+  const hasFields=Array.isArray(def.fields)&&def.fields.length>0;
+  if(hasFields){
+    const bad=[];
+    def.fields.forEach((f,i)=>{
+      if(!f||typeof f!=='object'){ bad.push(`第 ${i+1} 项不是对象`); return; }
+      const at=f.key?`字段 ${f.key}`:`第 ${i+1} 项`;
+      if(!f.key) bad.push(`第 ${i+1} 项缺少 key`);
+      if(typeof f.calc==='function'){
+        if(!f.deps||!Object.keys(f.deps).length) bad.push(`${at}:用了 calc 就必须给 deps`);
+        return;
+      }
+      if(!Number.isFinite(+f.reg)){ bad.push(`${at}:缺少 reg(或改用 deps+calc)`); return; }
+      if(f.type!=='bits'&&f.type!=='ascii'&&typeof I2C_HELPERS[f.type]!=='function')
+        bad.push(`${at}:type "${f.type}" 不认识`);
+      if(f.type==='bits'&&(!Number.isFinite(+f.bit)||!Number.isFinite(+f.bits)))
+        bad.push(`${at}:type='bits' 需要 bit 和 bits`);
+    });
+    if(bad.length){
+      addLog('i2cLog','定义校验失败: '+bad.join('; '),'err');
+      toast(`定义有问题:${bad[0]}${bad.length>1?`(共 ${bad.length} 处)`:''}`,'error');
+      return false;
+    }
+  }else if(def.read&&typeof def.decode==='function'){
+    const blocks=Array.isArray(def.read)?def.read:[def.read];
+    for(const b of blocks){
+      if(!b||b.reg===undefined||!b.len){ toast('read 需要 {reg, len}','error'); return false; }
+    }
+  }else{
+    toast('定义需要 fields 目录(推荐),或旧格式的 read + decode','error');
+    return false;
+  }
+
+  i2c.def=def;
+  i2c.mode=hasFields?'fields':'legacy';
+  i2c.legacyAllKeys=[]; i2c.writeLast={};
+  i2c.fieldsAll=hasFields?def.fields.slice():null;
+
+  if(def.addr!==undefined){
+    const a=typeof def.addr==='string'?(parseInt(def.addr,16)||parseInt(def.addr,10)):def.addr;
+    if(Number.isFinite(a)&&a>0) $('i2cAddr').value=(a&0xFF).toString(16).toUpperCase().padStart(2,'0');
+  }
+  $('i2cDefState').textContent='已启用: '+(def.name||'未命名');
+  const liveN=hasFields?i2cPollFields().length:0;
+  addLog('i2cLog','设备定义已启用: '+(def.name||'未命名')+(hasFields
+    ? ` (目录 ${i2c.fieldsAll.length} 项:轮询 ${liveN} 项、按需 ${i2c.fieldsAll.length-liveN} 项)`
+    : ' (旧格式 read+decode)'),'rx');
+  lsSet('iodock.i2c.defSrc',src);
+  i2cPrepareHistory();
+  i2cSyncPlot();
+  i2cRenderWrite();
+  i2cBuildTable(i2cPollKeysInOrder());
+  const ab=$('i2cAllBox'); if(ab){ ab.replaceChildren(); ab.style.display='none'; }
+  if(!silent) toast('设备定义已启用'+(def.name?`(${def.name})`:''),'success');
+  return true;
+}
+function i2cDefReset(){ $('i2cDef').value=I2C_DEF_DEFAULT; i2cDefApply(); }
+function i2cDefsAll(){ try{ return JSON.parse(lsGet('iodock.i2c.defs','{}'))||{}; }catch(e){ return {}; } }
+function i2cDefsRefresh(){
+  const defs=i2cDefsAll();
+  $('i2cDefSel').innerHTML='<option value="">(已保存的定义…)</option>'+
+    Object.keys(defs).map(n=>`<option>${esc(n)}</option>`).join('');
+}
+function i2cDefSave(){
+  const name=(prompt('保存为(名称):',(i2c.def&&i2c.def.name)||'')||'').trim();
+  if(!name)return;
+  const defs=i2cDefsAll(); defs[name]=$('i2cDef').value;
+  if(!lsSet('iodock.i2c.defs',JSON.stringify(defs))){ toast('保存失败:localStorage 不可用','error'); return; }
+  i2cDefsRefresh(); $('i2cDefSel').value=name; toast('已保存定义: '+name,'success');
+}
+function i2cDefLoad(){
+  const n=$('i2cDefSel').value; if(!n)return;
+  const defs=i2cDefsAll(); if(defs[n]===undefined)return;
+  $('i2cDef').value=defs[n]; i2cDefApply();
+}
+function i2cDefDel(){
+  const n=$('i2cDefSel').value; if(!n)return;
+  if(!confirm(`删除定义「${n}」?`))return;
+  const defs=i2cDefsAll(); delete defs[n];
+  lsSet('iodock.i2c.defs',JSON.stringify(defs)); i2cDefsRefresh(); toast('已删除','info');
+}
+
+/* ---------- 读取计划(由定义决定,用户无需勾选) ---------- */
+function i2cLabelOf(k){
+  if(i2c.mode==='fields'){
+    const f=(i2c.fieldsAll||[]).find(x=>x.key===k);
+    return f?(f.label||f.key):k;
+  }
+  return k;
+}
+/* 参与轮询的字段:定义里 poll!==false 的都会读;plot 只决定要不要画曲线 */
+function i2cPollFields(){ return (i2c.fieldsAll||[]).filter(f=>f.poll!==false); }
+/* poll:false 的字段只在「读全部」时读一次(配置/状态这类不必每帧读的) */
+function i2cOneshotFields(){ return (i2c.fieldsAll||[]).filter(f=>f.poll===false); }
+function i2cPollKeysInOrder(){
+  if(i2c.mode==='fields') return i2cPollFields().map(f=>f.key);
+  return i2c.legacyAllKeys||[];
+}
+function i2cSyncPlot(){
+  if(i2c.mode==='fields'){
+    i2c.units={};
+    for(const f of (i2c.fieldsAll||[])) i2c.units[f.key]=f.unit||'';
+    i2c.plotKeys=i2cPollFields().filter(f=>f.plot).map(f=>f.key);
+  }else{
+    i2c.plotKeys=(i2c.def&&Array.isArray(i2c.def.plot))?i2c.def.plot:[];
+  }
+  i2cSyncCharts();
+  i2cUpdatePlanHint();
+}
+function i2cUpdatePlanHint(){
+  const el=$('i2cPlanHint'); if(!el)return;
+  if(i2c.mode!=='fields'){
+    el.textContent=i2c.def?'旧格式定义:每次读取整块。':'—';
+    return;
+  }
+  if(!i2c.def){ el.textContent='—'; return; }
+  const live=i2cPollFields(), once=i2cOneshotFields();
+  if(!live.length){ el.textContent='定义里没有可轮询的量(所有字段都标了 poll:false)。'; return; }
+  const runs=i2cPlanRuns(live);
+  const total=runs.reduce((a,r)=>a+r.len,0);
+  el.textContent=`每次采样读 ${live.length} 个量 → 合并为 ${runs.length} 次 I2C READ(`;
+  el.append(document.createTextNode(runs.map(r=>`0x${i2cHex(r.reg)}+${r.len}`).join(' ')+`,共 ${total} 字节)`));
+  if(once.length) el.append(document.createTextNode(` · 另有 ${once.length} 个量标了 poll:false,只在「读全部」时读`));
+}
+
+/* ---------- 读取与解码 ---------- */
+async function i2cReadRaw(addr,reg,len){
+  const r=await sendCommand(`I2C READ 0x${i2cHex(addr)} 0x${i2cHex(reg)} ${len}`,{timeout:1200});
+  if(!r[0].startsWith('OK')) throw new Error(errCode(r[0])||'读失败');
+  const hex=(r[0].split('HEX:')[1]||'').replace(/[^0-9a-fA-F]/g,'');
+  const out=new Uint8Array(len);
+  for(let i=0;i<len;i++) out[i]=parseInt(hex.substr(i*2,2),16)||0;
+  if(hex.length<len*2) addLog('i2cLog',`返回仅 ${hex.length>>1} 字节,期望 ${len}`,'err');
+  return out;
+}
+async function i2cDefSample(){
+  if(!i2c.def) throw new Error('未启用设备定义');
+  const addr=i2cTargetAddr();
+  const bytesAll=[];
+
+  if(i2c.mode==='fields'){
+    const live=i2cPollFields();
+    if(!live.length) throw new Error('定义里没有可轮询的量(所有字段都标了 poll:false)');
+    const runs=i2cPlanRuns(live);
+    const buf={};
+    for(const r of runs){
+      const bytes=await i2cReadRaw(addr,r.reg,r.len);
+      for(let i=0;i<r.len;i++) buf[r.reg+i]=bytes[i];
+      for(const b of bytes) bytesAll.push(b);
+    }
+    const values={};
+    for(const f of live) values[f.key]=i2cFieldValue(f,buf);
+    const plan=`${runs.length} 次读取 · `+runs.map(r=>`0x${i2cHex(r.reg)}+${r.len}`).join(' ');
+    const hex=bytesAll.slice(0,48).map(i2cHex).join(' ');
+    return { values, rawAll:plan+' │ '+hex+(bytesAll.length>48?` …(+${bytesAll.length-48}B)`:''), buf };
+  }
+
+  // 旧格式:read + decode,每次读整块
+  const def=i2c.def;
+  const blocks=Array.isArray(def.read)?def.read:[def.read];
+  const got={}; const raw=[];
+  for(const b of blocks){
+    const bytes=await i2cReadRaw(addr,b.reg,b.len);
+    got[b.key||'main']=bytes;
+    for(const x of bytes) bytesAll.push(x);
+    raw.push(`0x${i2cHex(b.reg)}: `+Array.from(bytes).map(i2cHex).join(' '));
+  }
+  const input=blocks.length===1?got[blocks[0].key||'main']:got;
+  const values=def.decode(input);
+  i2c.legacyAllKeys=Object.keys(values);
+  return { values, rawAll:raw.join('  |  ') };
+}
+
+/* 读全部:轮询的量 + poll:false 的量,各读一次并列出所有值(用于核对配置/状态) */
+async function i2cReadAll(){
+  if(!requireConn())return;
+  if(!i2c.def){ toast('请先点「解析并启用」设备定义','error'); return; }
+  if(i2c.mode!=='fields'){ toast('旧格式定义不支持「读全部」','info'); return; }
+  const all=(i2c.fieldsAll||[]);
+  if(!all.length) return;
+  const addr=i2cTargetAddr();
+  try{
+    const runs=i2cPlanRuns(all);
+    const buf={};
+    for(const r of runs){
+      const bytes=await i2cReadRaw(addr,r.reg,r.len);
+      for(let i=0;i<r.len;i++) buf[r.reg+i]=bytes[i];
+    }
+    const groups=new Map();
+    for(const f of all){
+      let v;
+      try{ v=i2cFieldValue(f,buf); }catch(e){ v='(解码失败)'; }
+      const g=f.group||'未分组';
+      if(!groups.has(g)) groups.set(g,[]);
+      groups.get(g).push(`${f.label||f.key}=${i2cFmt(v)}${f.unit||''}`);
+    }
+    const box=$('i2cAllBox');
+    box.replaceChildren();
+    box.style.display='';
+    for(const [g,items] of groups){
+      const line=document.createElement('div');
+      const b=document.createElement('b'); b.textContent=g+' · ';
+      line.appendChild(b);
+      line.append(document.createTextNode(items.join('  ')));
+      box.appendChild(line);
+    }
+    addLog('i2cLog',`读全部:${runs.length} 次 I2C READ,共 ${all.length} 个量`,'rx');
+    toast(`已读取全部 ${all.length} 个量`,'success');
+  }catch(e){
+    addLog('i2cLog','读全部失败: '+e.message,'err');
+    toast('读全部失败: '+e.message,'error');
+  }
+}
+
+/* ---------- 结果表格 ---------- */
+function i2cFmt(v){
+  if(typeof v!=='number')return v===undefined?'-':String(v);
+  if(!Number.isFinite(v))return String(v);
+  const a=Math.abs(v);
+  if(a!==0&&(a<1e-3||a>=1e5))return v.toExponential(3);
+  return v.toFixed(3);
+}
+function i2cBuildTable(keys){
+  const t=$('i2cTable');
+  if(!keys.length){
+    i2c.keysAll=null;
+    const tb=document.createElement('tbody');
+    tb.innerHTML='<tr><td class="dim" colspan="3">还没有数据 —— 点「读一次」或「开始轮询」</td></tr>';
+    t.replaceChildren(tb);
+    return;
+  }
+  i2c.keysAll=keys.slice();
+  const thead=document.createElement('thead');
+  thead.innerHTML='<tr><th>名称</th><th>解码值</th><th>单位</th></tr>';
+  const tbody=document.createElement('tbody');
+  let lastGroup=null;
+  for(const k of keys){
+    // 有 group 时插一行分组标题,寄存器多的器件才看得过来
+    const f=(i2c.mode==='fields')?(i2c.fieldsAll||[]).find(x=>x.key===k):null;
+    const g=f?(f.group||''):'';
+    if(g&&g!==lastGroup){
+      lastGroup=g;
+      const gr=document.createElement('tr'); gr.className='grp-row';
+      const gd=document.createElement('td'); gd.colSpan=3; gd.textContent=g;
+      gr.appendChild(gd); tbody.appendChild(gr);
+    }
+    const tr=document.createElement('tr'); tr.dataset.k=k;
+    const a=document.createElement('td'); a.textContent=i2cLabelOf(k); a.title=k;
+    const b=document.createElement('td'); b.className='v'; b.textContent='-';
+    const c=document.createElement('td'); c.textContent=i2c.units[k]||'';
+    tr.append(a,b,c); tbody.appendChild(tr);
+  }
+  t.replaceChildren(thead,tbody);
+}
+function i2cPrepareHistory(){
+  i2c.t0=performance.now(); i2c.rows=[]; i2c.prev={}; i2c.keysAll=null; i2c.hist={};
+  for(const k of i2c.plotKeys) i2c.hist[k]=[];
+  $('i2cRaw').textContent='原始: -';
+  const t=$('i2cTable');
+  const tb=document.createElement('tbody');
+  tb.innerHTML='<tr><td class="dim" colspan="3">点「读一次」或「开始轮询」查看结果</td></tr>';
+  t.replaceChildren(tb);
+}
+function i2cOnSample(values,rawAll){
+  if(rawAll!==undefined) $('i2cRaw').textContent='原始: '+rawAll;
+  const keys=Object.keys(values);
+  if(!i2c.keysAll||i2c.keysAll.join('\u0001')!==keys.join('\u0001')) i2cBuildTable(keys);
+  const tbody=$('i2cTable').querySelector('tbody');
+  if(tbody) for(const tr of tbody.querySelectorAll('tr[data-k]')){
+    const k=tr.dataset.k;
+    if(!(k in values))continue;
+    const v=values[k], cell=tr.querySelector('td.v');
+    if(Object.prototype.hasOwnProperty.call(i2c.prev,k)&&!Object.is(i2c.prev[k],v)){
+      tr.classList.remove('changed'); void tr.offsetWidth; tr.classList.add('changed');
+    }
+    i2c.prev[k]=v;
+    cell.textContent=i2cFmt(v);
+  }
+  for(const k of i2c.plotKeys){
+    if(!(k in values))continue;
+    const a=i2c.hist[k]||(i2c.hist[k]=[]);
+    a.push(typeof values[k]==='number'?values[k]:NaN);
+    while(a.length>i2c.maxPoints) a.shift();
+  }
+  // 把勾选到的可写量的当前值同步到写入面板(正在输入的控件不动)
+  if(i2c.mode==='fields'){
+    for(const f of (i2c.fieldsAll||[])){
+      if(!f.write||!(f.key in values))continue;
+      i2c.writeLast[f.key]=values[f.key];
+      const el=document.getElementById('i2cW_'+f.key);
+      if(!el||document.activeElement===el)continue;
+      if(f.type==='bits'&&f.enum){
+        const raw=Object.keys(f.enum).find(k=>f.enum[k]===values[f.key]);
+        if(raw!==undefined) el.value=raw;
+      }else if(typeof values[f.key]==='number'){
+        el.value=values[f.key];
+      }
+    }
+  }
+  const row={t:(performance.now()-i2c.t0)/1000};
+  for(const k of keys) row[k]=values[k];
+  i2c.rows.push(row);
+  while(i2c.rows.length>5000) i2c.rows.shift();
+  i2cDraw();
+}
+
+/* ---------- 曲线(按单位分组,避免不同量纲互相压扁) ---------- */
+const I2C_COLORS=['#ff1a1a','#00c853','#2e7bff','#ff9500','#a855f7','#06b6d4','#ef5b5b','#84cc16'];
+/* 勾选变化时同步曲线:保留仍在图上的历史,丢掉被取消的 */
+function i2cSyncCharts(){
+  for(const k of i2c.plotKeys) if(!i2c.hist[k]) i2c.hist[k]=[];
+  for(const k of Object.keys(i2c.hist)) if(!i2c.plotKeys.includes(k)) delete i2c.hist[k];
+  i2cBuildCharts();
+  i2cDraw();
+}
+function i2cBuildCharts(){
+  const box=$('i2cCharts'); box.replaceChildren();
+  i2c.chartGroups=[];
+  const groups={};
+  for(const k of i2c.plotKeys){ const u=i2c.units[k]||''; (groups[u]||(groups[u]=[])).push(k); }
+  for(const unit of Object.keys(groups)){
+    const wrap=document.createElement('div'); wrap.className='chart-box';
+    const cv=document.createElement('canvas');
+    cv.width=1000; cv.height=200; cv.style.height='200px';
+    const lg=document.createElement('div'); lg.className='chart-legend';
+    wrap.append(cv,lg); box.appendChild(wrap);
+    i2c.chartGroups.push({cv,lg,keys:groups[unit],unit});
+  }
+}
+function i2cDraw(){
+  for(const g of i2c.chartGroups){
+    const ctx=g.cv.getContext('2d'), W=g.cv.width, H=g.cv.height;
+    ctx.clearRect(0,0,W,H);
+    const padL=60,padR=14,padT=14,padB=20, plotW=W-padL-padR, plotH=H-padT-padB;
+    const N=Math.max(0,...g.keys.map(k=>(i2c.hist[k]||[]).length));
+    if(N<2){
+      ctx.fillStyle='#94a3b8'; ctx.font='13px sans-serif';
+      ctx.textAlign='left'; ctx.textBaseline='middle';
+      ctx.fillText('等待数据…',padL+20,H/2);
+      g.lg.textContent=''; continue;
+    }
+    let mn=Infinity,mx=-Infinity;
+    for(const k of g.keys) for(const v of (i2c.hist[k]||[]))
+      if(Number.isFinite(v)){ if(v<mn)mn=v; if(v>mx)mx=v; }
+    if(!Number.isFinite(mn)||!Number.isFinite(mx)){ mn=-1; mx=1; }
+    if(mx-mn<1e-9){ mn-=0.5; mx+=0.5; }
+    let span=mx-mn; const pd=span*0.12; mn-=pd; mx+=pd; span=mx-mn;
+    const yOf=v=>padT+plotH*((mx-v)/span);
+    ctx.font='11px sans-serif'; ctx.textAlign='right'; ctx.textBaseline='middle';
+    for(let i=0;i<=4;i++){
+      const v=mx-(span*i/4), y=yOf(v);
+      ctx.strokeStyle='#eef1f6'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(W-padR,y); ctx.stroke();
+      ctx.fillStyle='#94a3b8'; ctx.fillText(v.toFixed(2),padL-6,y);
+    }
+    if(mn<0&&mx>0){
+      const y=yOf(0);
+      ctx.strokeStyle='#d8dee9'; ctx.setLineDash([5,4]);
+      ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(W-padR,y); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.font='600 11px sans-serif'; ctx.textAlign='right'; ctx.textBaseline='top';
+    ctx.fillStyle='#94a3b8'; ctx.fillText(g.unit||'',W-padR,2);
+    g.keys.forEach((k,idx)=>{
+      const a=i2c.hist[k]||[]; if(a.length<2)return;
+      const col=I2C_COLORS[idx%I2C_COLORS.length];
+      ctx.strokeStyle=col; ctx.lineWidth=2.5; ctx.lineJoin='round'; ctx.lineCap='round';
+      ctx.beginPath();
+      for(let i=0;i<a.length;i++){
+        const x=padL+(i/(i2c.maxPoints-1))*plotW, y=yOf(a[i]);
+        i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+      }
+      ctx.stroke();
+      const lx=padL+((a.length-1)/(i2c.maxPoints-1))*plotW, ly=yOf(a[a.length-1]);
+      ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(lx,ly,4,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle=col; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(lx,ly,4,0,Math.PI*2); ctx.stroke();
+    });
+    g.lg.innerHTML=g.keys.map((k,idx)=>{
+      const a=i2c.hist[k]||[], v=a[a.length-1];
+      return `<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px">`
+        +`<span style="width:14px;height:4px;border-radius:2px;background:${I2C_COLORS[idx%I2C_COLORS.length]};display:inline-block"></span>`
+        +`<b>${esc(k)}</b> ${v===undefined?'-':esc(i2cFmt(v))}</span>`;
+    }).join('');
+  }
+}
+
+/* ---------- 轮询:链式串行,不用 setInterval ---------- */
+function i2cPollToggle(){ i2c.running?i2cStopPoll():i2cStartPoll(); }
+function i2cStartPoll(){
+  if(!requireConn())return;
+  if(!i2c.def){ toast('请先点「解析并启用」设备定义','error'); return; }
+  if(i2c.mode==='fields'&&!i2cPollFields().length){
+    toast('定义里没有可轮询的量(所有字段都标了 poll:false)','error'); return;
+  }
+  if(i2c.running)return;
+  i2c.running=true; i2c.errors=0;
+  i2c.interval=Math.min(5000,Math.max(5,parseInt($('i2cInterval').value)||20));
+  i2cPrepareHistory();
+  const b=$('i2cPollBtn'); b.textContent='■ 停止轮询'; b.className='btn coral sm';
+  addLog('i2cLog',`开始轮询:${i2c.def.name||'未命名'} @ ${i2c.interval}ms`,'tx');
+  i2cPollLoop();
+}
+function i2cStopPoll(){
+  if(!i2c.running)return;
+  i2c.running=false;
+  const b=$('i2cPollBtn');
+  if(b){ b.textContent='▶ 开始轮询'; b.className='btn mint sm'; }
+}
+async function i2cPollLoop(){
+  while(i2c.running){
+    const t0=performance.now();
+    try{
+      const {values,rawAll}=await i2cDefSample();
+      if(!i2c.running)break;
+      i2c.errors=0;
+      i2cOnSample(values,rawAll);
+    }catch(e){
+      if(!i2c.running)break;
+      if(++i2c.errors>=3){
+        i2cStopPoll();
+        addLog('i2cLog','轮询连续失败,已停止: '+e.message,'err');
+        toast('轮询连续失败,已停止: '+e.message,'error');
+        return;
+      }
+      await i2cSleep(200);
+      continue;
+    }
+    // 周期可运行中实时调整
+    i2c.interval=Math.min(5000,Math.max(5,parseInt($('i2cInterval').value)||20));
+    await i2cSleep(Math.max(0,i2c.interval-(performance.now()-t0)));
+  }
+}
+async function i2cReadOnce(){
+  if(!requireConn())return;
+  if(!i2c.def){ toast('请先点「解析并启用」设备定义','error'); return; }
+  try{
+    const {values,rawAll}=await i2cDefSample();
+    if(!i2c.t0) i2c.t0=performance.now();
+    i2cOnSample(values,rawAll);
+  }catch(e){
+    addLog('i2cLog','读取失败: '+e.message,'err');
+    toast('读取失败: '+e.message,'error');
+  }
+}
+function i2cClearData(){ i2cPrepareHistory(); i2cDraw(); toast('数据已清空','info'); }
+
+/* ---------- 初始化序列 ---------- */
+async function i2cInitSeq(){
+  if(!requireConn())return;
+  if(!i2c.def){ toast('请先点「解析并启用」设备定义','error'); return; }
+  const steps=i2c.def.init||[];
+  if(!steps.length){ toast('该定义没有 init 序列','info'); return; }
+  const addr=i2cTargetAddr();
+  for(let i=0;i<steps.length;i++){
+    const s=steps[i];
+    let reg,data,delay=0;
+    if(Array.isArray(s)){ reg=s[0]; data=s.slice(1); }
+    else if(s&&typeof s==='object'){ reg=s.reg; data=s.val!==undefined?[s.val]:(s.data||[]); delay=s.delay||0; }
+    else { toast(`init 第 ${i+1} 项格式不对`,'error'); return; }
+    if(reg===undefined||!Array.isArray(data)||!data.length){ toast(`init 第 ${i+1} 项格式不对`,'error'); return; }
+    const hex=data.map(i2cHex).join(' ');
+    const r=await sendCommand(`I2C WRITE 0x${i2cHex(addr)} 0x${i2cHex(reg)} ${hex}`);
+    if(!r[0].startsWith('OK')){
+      addLog('i2cLog',`初始化第 ${i+1}/${steps.length} 步失败: reg=0x${i2cHex(reg)} ${errCode(r[0])}`,'err');
+      toast(`初始化失败(第 ${i+1} 步): ${errCode(r[0])||'未知错误'}`,'error');
+      return;
+    }
+    addLog('i2cLog',`初始化 ${i+1}/${steps.length}: 0x${i2cHex(reg)} ← ${hex}`,'tx');
+    if(delay) await i2cSleep(delay);
+  }
+  toast(`初始化完成(${steps.length} 步)`,'success');
+}
+
+/* ---------- CSV 导出 ---------- */
+function i2cCsv(){
+  if(!i2c.rows.length){ toast('还没有数据','error'); return; }
+  const keys=i2c.keysAll||Object.keys(i2c.rows[0]).filter(k=>k!=='t');
+  const head=['t',...keys].join(',');
+  const body=i2c.rows.map(r=>[r.t.toFixed(3),...keys.map(k=>{
+    const v=r[k];
+    return typeof v==='number'?v:(v===undefined?'':String(v));
+  })].join(','));
+  const name=(i2c.def&&i2c.def.name)?i2c.def.name:'i2c';
+  const blob=new Blob([head+'\n'+body.join('\n')],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`iodock_${name}_${new Date().toISOString().replace(/[:.]/g,'-')}.csv`;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  toast(`已导出 ${i2c.rows.length} 行`,'success');
+}
+
+/* ---------- 初始化 ---------- */
+function i2cInit(){
+  $('i2cDef').value=lsGet('iodock.i2c.defSrc',I2C_DEF_DEFAULT);
+  i2cDefsRefresh();
+  i2cDefApply(true);   // 静默:不在页面加载时弹 toast
 }
 
 /* ==================== SPI ==================== */
@@ -1293,6 +2460,7 @@ async function cfgClear(){
   try{const r=await sendCommand('CFG CLEAR');r[0]&&r[0].startsWith('OK')?toast('已清除保存的配置','info'):toast('清除失败','error');}catch(e){toast('清除失败','error');}
 }
 
+i2cInit();
 console.log('✅ IO Dock 控制台已加载');
 </script>
 </body>
